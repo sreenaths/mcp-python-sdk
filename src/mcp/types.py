@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Annotated, Any, Generic, Literal, TypeAlias, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, FileUrl, RootModel
+from pydantic import BaseModel, ConfigDict, Field, FileUrl, PrivateAttr, RootModel
 from pydantic.networks import AnyUrl, UrlConstraints
 from typing_extensions import deprecated
 
@@ -175,6 +175,15 @@ class ErrorData(BaseModel):
     Additional information about the error. The value of this member is defined by the
     sender (e.g. detailed error information, nested errors etc.).
     """
+
+    _error: Exception | None = PrivateAttr(default=None)
+    """
+    The exception that caused the error.
+    """
+
+    @property
+    def error(self) -> Exception | None:
+        return self._error
 
     model_config = ConfigDict(extra="allow")
 
