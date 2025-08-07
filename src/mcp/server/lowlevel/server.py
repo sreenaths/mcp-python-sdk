@@ -189,8 +189,8 @@ class Server(ServerCore, Generic[LifespanResultT, RequestT]):
                 case RequestResponder(request=types.ClientRequest(root=req)) as responder:
                     with responder:
                         await self._handle_request(message, req, session, lifespan_context, raise_exceptions)
-                case types.ClientNotification(root=notify):
-                    await self._handle_notification(notify)
+                case types.ClientNotification() as notification:
+                    await self.handle_notification(notification)
 
             for warning in w:
                 logger.info("Warning: %s: %s", warning.category.__name__, warning.message)
@@ -253,12 +253,3 @@ class Server(ServerCore, Generic[LifespanResultT, RequestT]):
             )
 
         logger.debug("Response sent")
-
-    async def _handle_notification(self, notify: Any):
-        if handler := self.notification_handlers.get(type(notify)):  # type: ignore
-            logger.debug("Dispatching notification of type %s", type(notify).__name__)
-
-            try:
-                await handler(notify)
-            except Exception:
-                logger.exception("Uncaught exception in notification handler")

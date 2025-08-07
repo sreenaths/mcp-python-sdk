@@ -512,6 +512,16 @@ class ServerCore:
 
         return decorator
 
+    async def handle_notification(self, notification: types.ClientNotification):
+        notify = notification.root
+        if handler := self.notification_handlers.get(type(notify)):  # type: ignore
+            logger.debug("Dispatching notification of type %s", type(notify).__name__)
+
+            try:
+                await handler(notify)
+            except Exception:
+                logger.exception("Uncaught exception in notification handler")
+
 
 async def _ping_handler(request: types.PingRequest) -> types.ServerResult:
     return types.ServerResult(types.EmptyResult())
