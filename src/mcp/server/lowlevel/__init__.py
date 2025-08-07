@@ -1,3 +1,4 @@
-from .server import NotificationOptions, Server
+from .core import NotificationOptions, ServerCore
+from .server import Server
 
-__all__ = ["Server", "NotificationOptions"]
+__all__ = ["Server", "ServerCore", "NotificationOptions"]

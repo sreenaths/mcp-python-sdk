@@ -18,8 +18,8 @@ def bypass_server_output_validation():
     This simulates a malicious or non-compliant server that doesn't validate
     its outputs, allowing us to test client-side validation.
     """
-    # Patch jsonschema.validate in the server module to disable all validation
-    with patch("mcp.server.lowlevel.server.jsonschema.validate"):
+    # Patch jsonschema.validate in the server core module to disable all validation
+    with patch("mcp.server.lowlevel.core.jsonschema.validate"):
         # The mock will simply return None (do nothing) for all validation calls
         yield
 

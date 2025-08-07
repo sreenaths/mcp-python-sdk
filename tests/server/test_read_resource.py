@@ -6,7 +6,8 @@ import pytest
 from pydantic import AnyUrl, FileUrl
 
 import mcp.types as types
-from mcp.server.lowlevel.server import ReadResourceContents, Server
+from mcp.server.lowlevel.helper_types import ReadResourceContents
+from mcp.server.lowlevel.server import Server
 
 
 @pytest.fixture
