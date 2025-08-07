@@ -84,7 +84,6 @@ from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server as stdio_server
 from mcp.shared.context import RequestContext
-from mcp.shared.exceptions import McpError
 from mcp.shared.message import ServerMessageMetadata, SessionMessage
 from mcp.shared.session import RequestResponder
 
@@ -186,27 +185,27 @@ class Server(ServerCore, Generic[LifespanResultT, RequestT]):
         with warnings.catch_warnings(record=True) as w:
             # TODO(Marcelo): We should be checking if message is Exception here.
             match message:  # type: ignore[reportMatchNotExhaustive]
-                case RequestResponder(request=types.ClientRequest(root=req)) as responder:
+                case RequestResponder(request=types.ClientRequest(root=_)) as responder:
                     with responder:
-                        await self._handle_request(message, req, session, lifespan_context, raise_exceptions)
+                        await self._handle_request_responder(
+                            message, responder.request, session, lifespan_context, raise_exceptions
+                        )
                 case types.ClientNotification() as notification:
                     await self.handle_notification(notification)
 
             for warning in w:
                 logger.info("Warning: %s: %s", warning.category.__name__, warning.message)
 
-    async def _handle_request(
+    async def _handle_request_responder(
         self,
         message: RequestResponder[types.ClientRequest, types.ServerResult],
-        req: Any,
+        request: types.ClientRequest,
         session: ServerSession,
         lifespan_context: LifespanResultT,
         raise_exceptions: bool,
     ):
-        logger.info("Processing request of type %s", type(req).__name__)
-        if handler := self.request_handlers.get(type(req)):  # type: ignore
-            logger.debug("Dispatching request of type %s", type(req).__name__)
-
+        logger.info("Processing request of type %s", type(request.root).__name__)
+        if type(request.root) in self.request_handlers:
             token = None
             try:
                 # Extract request context from message metadata
@@ -225,15 +224,16 @@ class Server(ServerCore, Generic[LifespanResultT, RequestT]):
                         request=request_data,
                     )
                 )
-                response = await handler(req)
-            except McpError as err:
-                response = err.error
-            except anyio.get_cancelled_exc_class():
-                logger.info(
-                    "Request %s cancelled - duplicate response suppressed",
-                    message.request_id,
-                )
-                return
+
+                response = await self.handle_request(request)
+
+                if (
+                    isinstance(response, types.ErrorData)
+                    and response.code == types.INTERNAL_ERROR
+                    and response.error is not None
+                ):
+                    raise response.error
+
             except Exception as err:
                 if raise_exceptions:
                     raise err
@@ -243,7 +243,8 @@ class Server(ServerCore, Generic[LifespanResultT, RequestT]):
                 if token is not None:
                     request_ctx.reset(token)
 
-            await message.respond(response)
+            if response is not None:
+                await message.respond(response)
         else:
             await message.respond(
                 types.ErrorData(

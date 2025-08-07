@@ -57,12 +57,14 @@ import warnings
 from collections.abc import Awaitable, Callable, Iterable
 from typing import Any, TypeAlias, cast
 
+import anyio
 import jsonschema
 from pydantic import AnyUrl
 
 import mcp.types as types
 from mcp.server.lowlevel.helper_types import ReadResourceContents  # TODO: Could this be in mcp.types?
 from mcp.server.models import InitializationOptions
+from mcp.shared.exceptions import McpError
 
 logger = logging.getLogger(__name__)
 
@@ -511,6 +513,35 @@ class ServerCore:
             return func
 
         return decorator
+
+    async def handle_request(self, request: types.ClientRequest) -> types.ServerResult | types.ErrorData | None:
+        if handler := self.request_handlers.get(type(request.root)):  # type: ignore
+            logger.debug("Dispatching request of type %s", type(request.root).__name__)
+
+            try:
+                response = await handler(request.root)
+            except McpError as err:
+                response = err.error
+            except anyio.get_cancelled_exc_class():
+                logger.info(
+                    "Request %s cancelled - duplicate response suppressed",
+                )
+                return None
+            except Exception as err:
+                response = types.ErrorData(
+                    code=types.INTERNAL_ERROR,
+                    message=str(err),
+                    data=None,
+                )
+                response._error = err  # pyright: ignore
+
+        else:
+            response = types.ErrorData(
+                code=types.METHOD_NOT_FOUND,
+                message="Method not found",
+            )
+
+        return response
 
     async def handle_notification(self, notification: types.ClientNotification):
         notify = notification.root
