@@ -8,7 +8,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from mcp.server.fastmcp import Context, FastMCP
-from mcp.server.lowlevel.core import NotificationOptions
+from mcp.server.lowlevel import NotificationOptions
 from mcp.server.lowlevel.server import Server
 from mcp.server.models import InitializationOptions
 from mcp.shared.message import SessionMessage

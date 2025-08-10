@@ -70,9 +70,9 @@ from __future__ import annotations as _annotations
 import contextvars
 import logging
 import warnings
-from collections.abc import AsyncIterator, Callable, Iterable
+from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
-from typing import Any, Generic, TypeAlias
+from typing import Any, Generic
 
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -80,6 +80,14 @@ from typing_extensions import TypeVar
 
 import mcp.types as types
 from mcp.server.lowlevel.core import ServerCore
+from mcp.server.lowlevel.types import (
+    # TODO: Should we add a deprecation warning for these imports?
+    # Keeping the following for backwards compatibility. Incase someone is importing any of them from server.
+    CombinationContent,  # noqa: F401 # pyright: ignore
+    NotificationOptions,  # noqa: F401 # pyright: ignore
+    StructuredContent,  # noqa: F401 # pyright: ignore
+    UnstructuredContent,  # noqa: F401 # pyright: ignore
+)
 from mcp.server.models import InitializationOptions
 from mcp.server.session import ServerSession
 from mcp.server.stdio import stdio_server as stdio_server
@@ -91,11 +99,6 @@ logger = logging.getLogger(__name__)
 
 LifespanResultT = TypeVar("LifespanResultT", default=Any)
 RequestT = TypeVar("RequestT", default=Any)
-
-# type aliases for tool call results
-StructuredContent: TypeAlias = dict[str, Any]
-UnstructuredContent: TypeAlias = Iterable[types.ContentBlock]
-CombinationContent: TypeAlias = tuple[UnstructuredContent, StructuredContent]
 
 # This will be properly typed in each Server instance's context
 request_ctx: contextvars.ContextVar[RequestContext[ServerSession, Any, Any]] = contextvars.ContextVar("request_ctx")
