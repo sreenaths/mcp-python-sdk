@@ -59,6 +59,8 @@ dev = [
     "pytest-pretty>=1.2.0",
     "inline-snapshot>=0.23.0",
     "dirty-equals>=0.9.0",
+    "psutil>=7.1.0",
+    "fastapi>=0.119.1",
 ]
 docs = [
     "mkdocs>=1.6.1",
@@ -89,7 +91,7 @@ packages = ["src/mcp"]
 
 [tool.pyright]
 typeCheckingMode = "strict"
-include = ["src/mcp", "tests", "examples/servers", "examples/snippets"]
+include = ["src/mcp", "tests", "examples/servers", "examples/snippets", "benchmarks"]
 venvPath = "."
 venv = ".venv"
 # The FastAPI style of using decorators in tests gives a `reportUnusedFunction` error.

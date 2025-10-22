@@ -1,0 +1,79 @@
+"""
+Integration tests for MCP server using FastMCP StreamableHttpTransport client with streamable HTTP endpoint.
+
+This module imports all tests from test_http_server.py and runs them against the streamable HTTP endpoint.
+Additional streamable-specific tests can be added to this file.
+"""
+
+import pytest
+from helpers.client_session_with_init import ClientSessionWithInit
+from servers.http_server import SERVER_HOST, SERVER_PORT, STREAMABLE_HTTP_MCP_PATH
+from test_http_server import TestHttpServer as HttpServerSuite
+
+pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.xdist_group("http_integration")
+class TestStreamableHttpServer(HttpServerSuite):
+    """
+    Test suite for Streamable HTTP server.
+    Runs all tests from TestHttpServer against the streamable HTTP endpoint and additional streamable-specific tests.
+    """
+
+    server_url: str = f"http://{SERVER_HOST}:{SERVER_PORT}{STREAMABLE_HTTP_MCP_PATH}"
+    default_headers: dict[str, str] = {
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/event-stream",
+    }
+
+    async def test_add_with_progress_tool(self, mcp_client: ClientSessionWithInit):
+        """Test calling the add_with_progress tool which sends progress notifications."""
+        # Test that the tool exists and can be called
+        tools = (await mcp_client.list_tools()).tools
+        tool_names = [tool.name for tool in tools]
+        assert "add_with_progress" in tool_names, f"add_with_progress tool not found in {tool_names}"
+
+        # Call the tool with progress reporting
+        result = await mcp_client.call_tool("add_with_progress", {"a": 5.0, "b": 3.0})
+
+        # Verify the result
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 8.0
+
+    async def test_add_with_progress_tool_with_progress_handler(self, mcp_client: ClientSessionWithInit):
+        """Test calling the add_with_progress tool with a progress handler to capture progress notifications."""
+
+        # Track progress notifications
+        progress_notifications: list[dict[str, float | str | None]] = []
+
+        async def progress_handler(progress: float, total: float | None, message: str | None) -> None:
+            """Capture progress notifications."""
+            progress_notifications.append({"progress": progress, "total": total, "message": message})
+
+        # Test that the tool exists and can be called
+        tools = (await mcp_client.list_tools()).tools
+        tool_names = [tool.name for tool in tools]
+        assert "add_with_progress" in tool_names, f"add_with_progress tool not found in {tool_names}"
+
+        # Call the tool with progress reporting
+        result = await mcp_client.call_tool(
+            "add_with_progress",
+            {"a": 7.0, "b": 13.0},
+            progress_callback=progress_handler,
+        )
+
+        # Verify the result
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 20.0
+
+        # Verify progress notifications were received
+        assert len(progress_notifications) > 0, "No progress notifications were received"
+
+        # Verify we got the expected progress values (0.1, 0.4, 0.7 from the implementation)
+        progress_values = [n["progress"] for n in progress_notifications]
+        expected_progress = [0.1, 0.4, 0.7]
+        assert progress_values == expected_progress, f"Expected progress {expected_progress}, got {progress_values}"
