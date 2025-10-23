@@ -3,8 +3,10 @@ import sys
 
 import anyio
 from fastapi import FastAPI, Request
-from minimcp import MiniMCP, starlette
+from mcp.server.minimcp import MiniMCP, starlette
 from pydantic import Field
+from typing import Any
+
 
 # Configure logging globally for the demo server
 logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-math_mcp = MiniMCP(name="MathServer - Streamable HTTP", version="0.1.0")
+math_mcp = MiniMCP[Any](name="MathServer - Streamable HTTP", version="0.1.0")
 
 
 @math_mcp.tool(description="Add two numbers")

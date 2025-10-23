@@ -2,7 +2,7 @@ import logging
 import sys
 
 from fastapi import FastAPI, Request
-from minimcp import starlette
+from mcp.server.minimcp import starlette
 
 from .math_mcp import math_mcp
 
