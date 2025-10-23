@@ -24,6 +24,18 @@ def build_notification_message(notification: ServerNotification) -> JSONRPCMessa
 
 
 def build_error_message(error_code: int, message_id: str | int | None, error: BaseException) -> JSONRPCMessage:
+    """
+    Build a JSON-RPC error message with the given error code, message ID, and error.
+
+    Args:
+        error_code: The JSON-RPC error code to use. See mcp.types for available codes.
+        message_id: The message ID to use. If None, "no-id" will be used.
+        error: The error object to build the error message from.
+
+    Returns:
+        A JSON-RPC error message object.
+    """
+
     error_message = f"{error.__class__.__name__}: {error}"
     error_data = ErrorData(code=error_code, message=error_message, data={"iso_timestamp": datetime.now().isoformat()})
 

@@ -9,6 +9,16 @@ logger = logging.getLogger(__name__)
 
 
 class TimeLimiter:
+    """
+    TimeLimiter enforces an idle timeout for message handlers.
+
+    The timer can be reset during handler execution to extend the deadline,
+    preventing timeout when the handler is actively processing.
+
+    Args:
+        timeout: The idle timeout in seconds.
+    """
+
     _timeout: float
     _scope: CancelScope
 
@@ -18,6 +28,7 @@ class TimeLimiter:
         self.reset()
 
     def reset(self) -> None:
+        """Reset the idle timeout, extending the deadline from the current time."""
         self._scope.deadline = current_time() + self._timeout
 
     def __enter__(self):
@@ -29,6 +40,27 @@ class TimeLimiter:
 
 
 class Limiter:
+    """
+    Limiter enforces concurrency and idle timeout limits for MiniMCP message handlers.
+
+    MiniMCP controls how many handlers can run at the same time (max_concurrency)
+    and how long each handler can remain idle (idle_timeout) before being cancelled.
+    By default, idle_timeout is set to 30 seconds and max_concurrency to 100 in MiniMCP.
+
+    The TimeLimiter returned by this limiter is available in the handler context
+    and can be reset using time_limiter.reset() to extend the deadline during
+    active processing.
+
+    Args:
+        idle_timeout: The idle timeout in seconds. Handlers exceeding this timeout
+            will be cancelled if they don't reset the timer.
+        max_concurrency: The maximum number of concurrent message handlers allowed.
+            Additional requests will wait until a slot becomes available.
+
+    Yields:
+        A TimeLimiter that can be used to reset the idle timeout during handler execution.
+    """
+
     _idle_timeout: int
 
     def __init__(self, idle_timeout: int, max_concurrency: int) -> None:
