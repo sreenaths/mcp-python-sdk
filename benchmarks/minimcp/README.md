@@ -11,6 +11,9 @@ uv run python -m benchmarks.minimcp.macro.stdio_mcp_server_benchmark
 
 # HTTP
 uv run python -m benchmarks.minimcp.macro.http_mcp_server_benchmark
+
+# Streamable HTTP
+uv run python -m benchmarks.minimcp.macro.streamable_http_mcp_server_benchmark
 ```
 
 ## Analyze Results
@@ -25,6 +28,12 @@ uv run python benchmarks/minimcp/analyze_results.py benchmarks/minimcp/reports/s
 uv run python benchmarks/minimcp/analyze_results.py benchmarks/minimcp/reports/http_mcp_server_async_benchmark_results.json
 
 uv run python benchmarks/minimcp/analyze_results.py benchmarks/minimcp/reports/http_mcp_server_async_benchmark_results.json
+
+# Streamable HTTP
+uv run python benchmarks/minimcp/analyze_results.py benchmarks/minimcp/reports/streamable_http_mcp_server_async_benchmark_results.json
+
+uv run python benchmarks/minimcp/analyze_results.py benchmarks/minimcp/reports/streamable_http_mcp_server_async_benchmark_results.json
+
 ```
 
 ## Generate Report
