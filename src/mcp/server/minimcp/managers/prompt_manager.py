@@ -8,6 +8,7 @@ import pydantic_core
 from typing_extensions import TypedDict, Unpack
 
 from mcp.server.lowlevel.server import Server
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 from mcp.types import AnyFunction, GetPromptResult, Prompt, PromptArgument, PromptMessage, TextContent
 
@@ -46,7 +47,7 @@ class PromptManager:
 
         prompt_func = MCPFunc(func, kwargs.get("name"))
         if prompt_func.name in self._prompts:
-            raise ValueError(f"Prompt {prompt_func.name} already registered")
+            raise MCPValueError(f"Prompt {prompt_func.name} already registered")
 
         prompt = Prompt(
             name=prompt_func.name,
@@ -86,7 +87,7 @@ class PromptManager:
         Remove a prompt from the MCP prompt manager.
         """
         if name not in self._prompts:
-            raise ValueError(f"Prompt {name} not found")
+            raise MCPValueError(f"Prompt {name} not found")
 
         return self._prompts.pop(name)[0]
 
@@ -98,11 +99,10 @@ class PromptManager:
 
     async def get(self, name: str, args: dict[str, str] | None) -> GetPromptResult:
         if name not in self._prompts:
-            raise ValueError(f"Prompt {name} not found")
+            raise MCPValueError(f"Prompt {name} not found")
 
         try:
-            prompt = self._prompts[name][0]
-            prompt_func = self._prompts[name][1]
+            prompt, prompt_func = self._prompts[name]
 
             result = await prompt_func.execute(args)
             messages = self._convert_result(result)
@@ -116,7 +116,7 @@ class PromptManager:
         except Exception as e:
             msg = f"Error getting prompt {name}: {e}"
             logger.exception(msg)
-            raise ValueError(msg)
+            raise MCPRuntimeError(msg) from e
 
     def _convert_result(self, result: Any) -> builtins.list[PromptMessage]:
         """Convert the result to messages."""
@@ -144,5 +144,5 @@ class PromptManager:
                     messages.append(PromptMessage(role="user", content=content))
 
             return messages
-        except Exception:
-            raise ValueError("Could not convert prompt result to message")
+        except Exception as e:
+            raise MCPRuntimeError("Could not convert prompt result to message") from e

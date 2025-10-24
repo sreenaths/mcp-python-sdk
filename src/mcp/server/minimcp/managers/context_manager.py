@@ -93,10 +93,10 @@ class ContextManager(Generic[ScopeT]):
         """
         try:
             return self._ctx.get()
-        except LookupError:
-            err = ContextError("No Context: Called get outside of an active context")
-            logger.error(err)
-            raise err
+        except LookupError as e:
+            msg = "No Context: Called mcp.context.get() outside of an active handler context"
+            logger.error(msg)
+            raise ContextError(msg) from e
 
     def get_message(self) -> JSONRPCMessage:
         """Get the current JSON-RPC message being handled.

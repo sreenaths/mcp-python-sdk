@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.managers.tool_manager import ToolDefinition, ToolManager
 
 pytestmark = pytest.mark.anyio
@@ -113,7 +114,7 @@ class TestToolManager:
         assert "async_tool" in tool_manager._tools
 
     def test_add_duplicate_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that adding a tool with duplicate name raises ValueError."""
+        """Test that adding a tool with duplicate name raises MCPValueError."""
 
         def tool1(x: int) -> int:
             return x
@@ -125,11 +126,11 @@ class TestToolManager:
         tool_manager.add(tool1, name="duplicate_name")
 
         # Adding second tool with same name should raise error
-        with pytest.raises(ValueError, match="Tool duplicate_name already registered"):
+        with pytest.raises(MCPValueError, match="Tool duplicate_name already registered"):
             tool_manager.add(tool2, name="duplicate_name")
 
     def test_add_again_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that adding a tool with duplicate name raises ValueError."""
+        """Test that adding a tool with duplicate name raises MCPValueError."""
 
         def tool1(x: int) -> int:
             return x
@@ -138,11 +139,11 @@ class TestToolManager:
         tool_manager.add(tool1)
 
         # Adding tool again should raise error
-        with pytest.raises(ValueError, match="Tool tool1 already registered"):
+        with pytest.raises(MCPValueError, match="Tool tool1 already registered"):
             tool_manager.add(tool1)
 
     def test_add_duplicate_function_name_raises_error(self, tool_manager: ToolManager):
-        """Test that adding functions with same name raises ValueError."""
+        """Test that adding functions with same name raises MCPValueError."""
 
         def same_name(x: int) -> int:
             return x
@@ -158,7 +159,7 @@ class TestToolManager:
 
         def different_scope_same_name():
             # But this should fail since it uses the function name
-            with pytest.raises(ValueError, match="Tool same_name already registered"):
+            with pytest.raises(MCPValueError, match="Tool same_name already registered"):
                 # Create another function with same name
                 def same_name(z: float) -> float:
                     return z
@@ -184,8 +185,8 @@ class TestToolManager:
         assert "test_tool" not in tool_manager._tools
 
     def test_remove_nonexistent_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that removing a non-existent tool raises ValueError."""
-        with pytest.raises(ValueError, match="Tool nonexistent not found"):
+        """Test that removing a non-existent tool raises MCPValueError."""
+        with pytest.raises(MCPValueError, match="Tool nonexistent not found"):
             tool_manager.remove("nonexistent")
 
     async def test_list_tools_empty(self, tool_manager: ToolManager):
@@ -256,8 +257,8 @@ class TestToolManager:
         assert result[1]["result"] == "Hi, Bob!"
 
     async def test_call_nonexistent_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that calling a non-existent tool raises ValueError."""
-        with pytest.raises(ValueError, match="Tool nonexistent not found"):
+        """Test that calling a non-existent tool raises MCPValueError."""
+        with pytest.raises(MCPValueError, match="Tool nonexistent not found"):
             await tool_manager.call("nonexistent", {})
 
     async def test_call_tool_with_complex_return_type(self, tool_manager: ToolManager):
@@ -304,8 +305,9 @@ class TestToolManager:
         # by ensuring the tool works with valid arguments and would fail with invalid ones
         # through the func_metadata validation layer
 
-        with pytest.raises(ValidationError, match="required_int"):
+        with pytest.raises(MCPRuntimeError, match="required_int") as exc_info:
             await tool_manager.call("strict_tool", {"invalid_int": 42})
+        assert isinstance(exc_info.value.__cause__, ValidationError)
 
     def test_tool_options_typed_dict(self):
         """Test ToolDefinition TypedDict structure."""
@@ -359,7 +361,7 @@ class TestToolManager:
             elif operation == "multiply":
                 return a * b
             else:
-                raise ValueError(f"Unknown operation: {operation}")
+                raise Exception(f"Unknown operation: {operation}")
 
         # Add tool
         added_tool = tool_manager.add(calculator, description="Basic calculator")
@@ -387,5 +389,5 @@ class TestToolManager:
         assert len(tools) == 0
 
         # Calling removed tool should fail
-        with pytest.raises(ValueError, match="Tool calculator not found"):
+        with pytest.raises(MCPValueError, match="Tool calculator not found"):
             await tool_manager.call("calculator", {"operation": "add", "a": 1, "b": 2})

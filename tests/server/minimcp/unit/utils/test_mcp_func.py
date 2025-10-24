@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import pytest
 from pydantic import BaseModel, ValidationError
 
+from mcp.server.minimcp.exceptions import MCPValueError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 from mcp.types import AnyFunction
 
@@ -75,7 +76,7 @@ class TestMCPFuncValidation:
         # Access the classmethod descriptor directly from __dict__
         class_method_descriptor = MyClass.__dict__["class_method"]
 
-        with pytest.raises(ValueError, match="Function cannot be a classmethod"):
+        with pytest.raises(MCPValueError, match="Function cannot be a classmethod"):
             MCPFunc(class_method_descriptor)
 
     def test_reject_staticmethod(self):
@@ -91,7 +92,7 @@ class TestMCPFuncValidation:
         # Access the staticmethod descriptor directly from __dict__
         static_method_descriptor = MyClass.__dict__["static_method"]
 
-        with pytest.raises(ValueError, match="Function cannot be a staticmethod"):
+        with pytest.raises(MCPValueError, match="Function cannot be a staticmethod"):
             MCPFunc(static_method_descriptor)
 
     def test_reject_abstract_method(self):
@@ -108,7 +109,7 @@ class TestMCPFuncValidation:
         # Test with the fake abstract method
         fake_abstract = FakeAbstractMethod()
 
-        with pytest.raises(ValueError, match="Function cannot be an abstract method"):
+        with pytest.raises(MCPValueError, match="Function cannot be an abstract method"):
             MCPFunc(fake_abstract)  # type: ignore
 
     def test_reject_non_function(self):
@@ -116,7 +117,7 @@ class TestMCPFuncValidation:
 
         not_a_function = "this is a string"
 
-        with pytest.raises(ValueError, match="Value passed is not a function or method"):
+        with pytest.raises(MCPValueError, match="Value passed is not a function or method"):
             MCPFunc(not_a_function)  # type: ignore
 
     def test_reject_function_with_var_positional(self):
@@ -125,7 +126,7 @@ class TestMCPFuncValidation:
         def func_with_args(a: int, *args: int) -> int:
             return a + sum(args)
 
-        with pytest.raises(ValueError, match="Functions with \\*args are not supported"):
+        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
             MCPFunc(func_with_args)
 
     def test_reject_function_with_var_keyword(self):
@@ -134,7 +135,7 @@ class TestMCPFuncValidation:
         def func_with_kwargs(a: int, **kwargs: Any) -> int:
             return a
 
-        with pytest.raises(ValueError, match="Functions with \\*\\*kwargs are not supported"):
+        with pytest.raises(MCPValueError, match="Functions with \\*\\*kwargs are not supported"):
             MCPFunc(func_with_kwargs)
 
     def test_reject_function_with_both_var_args_and_kwargs(self):
@@ -144,7 +145,7 @@ class TestMCPFuncValidation:
             return a
 
         # Should fail on *args first
-        with pytest.raises(ValueError, match="Functions with \\*args are not supported"):
+        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
             MCPFunc(func_with_both)
 
     def test_accept_method(self):
@@ -209,7 +210,7 @@ class TestMCPFuncNameInference:
 
         lambda_func: AnyFunction = lambda a: a  # noqa: E731  # type: ignore
 
-        with pytest.raises(ValueError, match="Lambda functions must be named"):
+        with pytest.raises(MCPValueError, match="Lambda functions must be named"):
             MCPFunc(lambda_func)
 
     def test_accept_lambda_with_custom_name(self):
@@ -231,7 +232,7 @@ class TestMCPFuncNameInference:
         callable_obj = CallableWithoutName()
 
         # Callable objects fail validation because they're not routines
-        with pytest.raises(ValueError, match="Value passed is not a function or method"):
+        with pytest.raises(MCPValueError, match="Value passed is not a function or method"):
             MCPFunc(callable_obj)  # type: ignore
 
 
@@ -569,11 +570,11 @@ class TestMCPFuncEdgeCases:
         """Test that exceptions from async functions are propagated."""
 
         async def async_error_func(a: int) -> int:
-            raise ValueError("Async error")
+            raise MCPValueError("Async error")
 
         mcp_func = MCPFunc(async_error_func)
 
-        with pytest.raises(ValueError, match="Async error"):
+        with pytest.raises(MCPValueError, match="Async error"):
             await mcp_func.execute({"a": 5})
 
     def test_metadata_is_created_on_init(self):

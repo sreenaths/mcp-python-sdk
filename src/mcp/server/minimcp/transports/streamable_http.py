@@ -11,6 +11,7 @@ from anyio.streams.memory import MemoryObjectReceiveStream
 
 import mcp.types as types
 from mcp.server.minimcp import json_rpc
+from mcp.server.minimcp.exceptions import MCPRuntimeError
 from mcp.server.minimcp.transports.http_transport_base import CONTENT_TYPE_JSON, HTTPResult, HTTPTransportBase
 from mcp.server.minimcp.types import Message, NoMessage, Send
 from mcp.server.minimcp.utils.model import to_json
@@ -130,7 +131,7 @@ class StreamableHTTPTransport(HTTPTransportBase):
             return result
 
         if self._tg is None:
-            raise RuntimeError("StreamableHTTPTransport was not started")
+            raise MCPRuntimeError("StreamableHTTPTransport was not started")
 
         response = await self._tg.start(self._runner, handler, body)
         logger.debug("Handling completed. Response: %s", response)

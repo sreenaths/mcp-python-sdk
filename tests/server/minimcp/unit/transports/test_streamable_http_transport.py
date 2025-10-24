@@ -6,6 +6,7 @@ import anyio
 import pytest
 from anyio.streams.memory import MemoryObjectReceiveStream
 
+from mcp.server.minimcp.exceptions import MCPRuntimeError
 from mcp.server.minimcp.transports.http_transport_base import HTTPResult
 from mcp.server.minimcp.transports.streamable_http import (
     CONTENT_TYPE_SSE,
@@ -120,7 +121,7 @@ class TestStreamableHTTPTransport:
         valid_body: str,
     ):
         """Test that dispatch raises error when transport is not started."""
-        with pytest.raises(RuntimeError, match="StreamableHTTPTransport was not started"):
+        with pytest.raises(MCPRuntimeError, match="StreamableHTTPTransport was not started"):
             await transport.dispatch(mock_handler, "POST", valid_headers, valid_body)
 
     async def test_dispatch_sse_response(

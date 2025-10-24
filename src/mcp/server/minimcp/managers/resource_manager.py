@@ -11,6 +11,7 @@ from typing_extensions import TypedDict, Unpack
 
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import Server
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 from mcp.types import Annotations, AnyFunction, Resource, ResourceTemplate
 
@@ -69,11 +70,11 @@ class ResourceManager:
         """
 
         if not uri:
-            raise ValueError("URI is required, pass it as part of the options")
+            raise MCPValueError("URI is required, pass it as part of the definition.")
 
         resource_func = MCPFunc(func, kwargs.get("name"))
         if resource_func.name in self._resources:
-            raise ValueError(f"Resource {resource_func.name} already registered")
+            raise MCPValueError(f"Resource {resource_func.name} already registered")
 
         normalized_uri = self._check_similar_resource(uri)
 
@@ -83,7 +84,9 @@ class ResourceManager:
         if uri_params or func_params:
             # Resource Template
             if uri_params != func_params:
-                raise ValueError(f"Mismatch between URI parameters {uri_params} and function parameters {func_params}")
+                raise MCPValueError(
+                    f"Mismatch between URI parameters {uri_params} and function parameters {func_params}"
+                )
 
             resource = ResourceTemplate(
                 name=resource_func.name,
@@ -132,7 +135,7 @@ class ResourceManager:
 
         for r in self._resources.values():
             if r.normalized_uri == normalized_uri:
-                raise ValueError(f"Resource {uri} already registered under the name {r.resource.name}")
+                raise MCPValueError(f"Resource {uri} already registered under the name {r.resource.name}")
 
         return normalized_uri
 
@@ -154,7 +157,7 @@ class ResourceManager:
         Remove a resource from the MCP resource manager.
         """
         if name not in self._resources:
-            raise ValueError(f"Resource {name} not found")
+            raise MCPValueError(f"Resource {name} not found")
 
         return self._resources.pop(name).resource
 
@@ -172,7 +175,7 @@ class ResourceManager:
 
     async def read_by_name(self, name: str, args: dict[str, str] | None = None) -> Iterable[ReadResourceContents]:
         if name not in self._resources:
-            raise ValueError(f"Resource {name} not found")
+            raise MCPValueError(f"Resource {name} not found")
 
         details = self._resources[name]
         return await self._read_resource(details, args)
@@ -182,7 +185,7 @@ class ResourceManager:
 
         details, args = self._find_matching_resource(uri)
         if details is None:
-            raise ValueError(f"Resource {uri} not found")
+            raise MCPValueError(f"Resource {uri} not found")
 
         return await self._read_resource(details, args)
 
@@ -199,7 +202,7 @@ class ResourceManager:
         except Exception as e:
             msg = f"Error reading resource {details.resource.name}: {e}"
             logger.exception(msg)
-            raise ValueError(msg)
+            raise MCPRuntimeError(msg) from e
 
     def _convert_result(self, result: Any) -> str | bytes:
         """

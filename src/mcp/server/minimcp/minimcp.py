@@ -11,9 +11,9 @@ import mcp.shared.version as version
 import mcp.types as types
 from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.server.minimcp.exceptions import (
-    ContextError,
     InvalidParamsError,
     MethodNotFoundError,
+    MiniMCPError,
     ParserError,
     UnsupportedRPCMessageType,
 )
@@ -131,7 +131,13 @@ class MiniMCP(Generic[ScopeT]):
         except TimeoutError as e:
             logger.error("Message handler timed out: %s", e)
             response = json_rpc.build_error_message(types.INTERNAL_ERROR, message_id, e)
-        except (Exception, ContextError) as e:
+        except MiniMCPError as e:
+            # Errors raised by the MiniMCP internals. Catches value, runtime, and context errors.
+            if self._raise_exceptions:
+                raise
+            logger.error("Error while handling message: %s", e)
+            response = json_rpc.build_error_message(types.INTERNAL_ERROR, message_id, e)
+        except Exception as e:
             logger.exception("Unhandled exception")
             if self._raise_exceptions:
                 raise

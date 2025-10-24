@@ -57,25 +57,25 @@ class TestContextManager:
     def test_get_without_active_context_raises_error(self):
         """Test that get() raises ContextError when no context is active."""
         context_manager = ContextManager[None]()
-        with pytest.raises(ContextError, match="No Context: Called get outside of an active context"):
+        with pytest.raises(ContextError, match="outside of an active handler context"):
             context_manager.get()
 
     def test_get_message_without_active_context_raises_error(self):
         """Test that get_message() raises ContextError when no context is active."""
         context_manager = ContextManager[None]()
-        with pytest.raises(ContextError, match="No Context: Called get outside of an active context"):
+        with pytest.raises(ContextError, match="outside of an active handler context"):
             context_manager.get_message()
 
     def test_get_scope_without_active_context_raises_error(self):
         """Test that get_scope() raises ContextError when no context is active."""
         context_manager = ContextManager[None]()
-        with pytest.raises(ContextError, match="No Context: Called get outside of an active context"):
+        with pytest.raises(ContextError, match="outside of an active handler context"):
             context_manager.get_scope()
 
     def test_get_responder_without_active_context_raises_error(self):
         """Test that get_responder() raises ContextError when no context is active."""
         context_manager = ContextManager[None]()
-        with pytest.raises(ContextError, match="No Context: Called get outside of an active context"):
+        with pytest.raises(ContextError, match="outside of an active handler context"):
             context_manager.get_responder()
 
     def test_active_context_manager(self, sample_context: Context[dict[str, str]]):

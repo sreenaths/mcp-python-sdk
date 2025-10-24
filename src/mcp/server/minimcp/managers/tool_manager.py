@@ -7,7 +7,8 @@ from typing import Any
 from typing_extensions import TypedDict, Unpack
 
 import mcp.types as types
-from mcp.server.lowlevel.server import CombinationContent, Server, StructuredContent, UnstructuredContent
+from mcp.server.lowlevel.server import CombinationContent, Server
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class ToolManager:
 
         tool_func = MCPFunc(func, kwargs.get("name"))
         if tool_func.name in self._tools:
-            raise ValueError(f"Tool {tool_func.name} already registered")
+            raise MCPValueError(f"Tool {tool_func.name} already registered")
 
         tool = types.Tool(
             name=tool_func.name,
@@ -74,7 +75,7 @@ class ToolManager:
         Remove a tool from the MCP tool manager.
         """
         if name not in self._tools:
-            raise ValueError(f"Tool {name} not found")
+            raise MCPValueError(f"Tool {name} not found")
 
         logger.debug("Removing tool %s", name)
         return self._tools.pop(name)[0]
@@ -85,19 +86,22 @@ class ToolManager:
     def list(self) -> builtins.list[types.Tool]:
         return [tool[0] for tool in self._tools.values()]
 
-    async def call(
-        self, name: str, args: dict[str, Any]
-    ) -> UnstructuredContent | StructuredContent | CombinationContent:
+    async def call(self, name: str, args: dict[str, Any]) -> CombinationContent:
         """
         Call a tool - Can be called from anywhere.
         """
 
         if name not in self._tools:
-            raise ValueError(f"Tool {name} not found")
+            raise MCPValueError(f"Tool {name} not found")
 
-        tool_func = self._tools[name][1]
+        try:
+            tool_func = self._tools[name][1]
 
-        result = await tool_func.execute(args)
-        logger.debug("Tool %s handled with args %s", name, args)
+            result = await tool_func.execute(args)
+            logger.debug("Tool %s handled with args %s", name, args)
 
-        return tool_func.meta.convert_result(result)
+            return tool_func.meta.convert_result(result)
+        except Exception as e:
+            msg = f"Error calling tool {name}: {e}"
+            logger.exception(msg)
+            raise MCPRuntimeError(msg) from e

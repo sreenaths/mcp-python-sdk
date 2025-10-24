@@ -3,9 +3,11 @@ from unittest.mock import Mock
 
 import anyio
 import pytest
+from pydantic import ValidationError
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.managers.prompt_manager import PromptDefinition, PromptManager
 
 pytestmark = pytest.mark.anyio
@@ -131,7 +133,7 @@ class TestPromptManager:
         assert optional_arg.required is False
 
     def test_add_duplicate_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that adding a prompt with duplicate name raises ValueError."""
+        """Test that adding a prompt with duplicate name raises MCPValueError."""
 
         def prompt1(x: str) -> str:
             return x
@@ -143,11 +145,11 @@ class TestPromptManager:
         prompt_manager.add(prompt1, name="duplicate_name")
 
         # Adding second prompt with same name should raise error
-        with pytest.raises(ValueError, match="Prompt duplicate_name already registered"):
+        with pytest.raises(MCPValueError, match="Prompt duplicate_name already registered"):
             prompt_manager.add(prompt2, name="duplicate_name")
 
     def test_add_again_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that adding a prompt again raises ValueError."""
+        """Test that adding a prompt again raises MCPValueError."""
 
         def prompt1(x: str) -> str:
             return x
@@ -156,7 +158,7 @@ class TestPromptManager:
         prompt_manager.add(prompt1)
 
         # Adding prompt again should raise error
-        with pytest.raises(ValueError, match="Prompt prompt1 already registered"):
+        with pytest.raises(MCPValueError, match="Prompt prompt1 already registered"):
             prompt_manager.add(prompt1)
 
     def test_remove_existing_prompt(self, prompt_manager: PromptManager):
@@ -176,8 +178,8 @@ class TestPromptManager:
         assert "test_prompt" not in prompt_manager._prompts
 
     def test_remove_nonexistent_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that removing a non-existent prompt raises ValueError."""
-        with pytest.raises(ValueError, match="Prompt nonexistent not found"):
+        """Test that removing a non-existent prompt raises MCPValueError."""
+        with pytest.raises(MCPValueError, match="Prompt nonexistent not found"):
             prompt_manager.remove("nonexistent")
 
     async def test_list_prompts_empty(self, prompt_manager: PromptManager):
@@ -265,12 +267,12 @@ class TestPromptManager:
         assert result.messages[0].content.text == "Write a long casual piece about AI"
 
     async def test_get_nonexistent_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that getting a non-existent prompt raises ValueError."""
-        with pytest.raises(ValueError, match="Prompt nonexistent not found"):
+        """Test that getting a non-existent prompt raises MCPValueError."""
+        with pytest.raises(MCPValueError, match="Prompt nonexistent not found"):
             await prompt_manager.get("nonexistent", {})
 
     async def test_get_prompt_missing_required_arguments(self, prompt_manager: PromptManager):
-        """Test that getting a prompt with missing required arguments raises ValueError."""
+        """Test that getting a prompt with missing required arguments raises MCPValueError."""
 
         def strict_prompt(required_param: str, optional_param: str = "default") -> str:
             """A prompt with required parameters."""
@@ -278,11 +280,13 @@ class TestPromptManager:
 
         prompt_manager.add(strict_prompt)
 
-        with pytest.raises(ValueError, match="Field required"):
+        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
             await prompt_manager.get("strict_prompt", {})
+        assert isinstance(exc_info.value.__cause__, ValidationError)
 
-        with pytest.raises(ValueError, match="Field required"):
+        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
             await prompt_manager.get("strict_prompt", {"optional_param": "value"})
+        assert isinstance(exc_info.value.__cause__, ValidationError)
 
     async def test_get_prompt_returns_prompt_message_list(self, prompt_manager: PromptManager):
         """Test that prompt function returning PromptMessage list works correctly."""
@@ -353,12 +357,12 @@ class TestPromptManager:
         def failing_prompt(should_fail: str) -> str:
             """A prompt that fails."""
             if should_fail == "yes":
-                raise RuntimeError("Intentional failure")
+                raise Exception("Intentional failure")
             return "Success"
 
         prompt_manager.add(failing_prompt)
 
-        with pytest.raises(ValueError, match="Error getting prompt failing_prompt"):
+        with pytest.raises(MCPRuntimeError, match="Error getting prompt failing_prompt"):
             await prompt_manager.get("failing_prompt", {"should_fail": "yes"})
 
     def test_prompt_options_typed_dict(self):
@@ -428,7 +432,7 @@ class TestPromptManager:
         assert len(prompts) == 0
 
         # Getting removed prompt should fail
-        with pytest.raises(ValueError, match="Prompt story_prompt not found"):
+        with pytest.raises(MCPValueError, match="Prompt story_prompt not found"):
             await prompt_manager.get("story_prompt", {"genre": "mystery", "character": "detective"})
 
     def test_convert_result_edge_cases(self, prompt_manager: PromptManager):
@@ -465,10 +469,10 @@ class TestPromptManager:
         assert isinstance(result[2].content, types.TextContent)
 
     def test_convert_result_invalid_data_raises_error(self, prompt_manager: PromptManager):
-        """Test that _convert_result raises ValueError for invalid data."""
+        """Test that _convert_result raises MCPRuntimeError for invalid data."""
 
         # Mock the validation to fail
         invalid_dict = {"invalid": "structure"}
 
-        with pytest.raises(ValueError, match="Could not convert prompt result to message"):
+        with pytest.raises(MCPRuntimeError, match="Could not convert prompt result to message"):
             prompt_manager._convert_result([invalid_dict])
