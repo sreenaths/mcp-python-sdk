@@ -236,162 +236,162 @@ class TestHttpServer:
         assert results[2] == 15.0
         assert results[3] == 300.0
 
-    # async def test_invalid_json_request_body(self, http_client: AsyncClient):
-    #     """Test server response to invalid JSON in request body."""
+    async def test_invalid_json_request_body(self, http_client: AsyncClient):
+        """Test server response to invalid JSON in request body."""
 
-    #     # Send invalid JSON
-    #     response = await http_client.post(self.server_url, content="not valid json", headers=self.default_headers)
+        # Send invalid JSON
+        response = await http_client.post(self.server_url, content="not valid json", headers=self.default_headers)
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-    #     assert "Invalid JSON" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
+        assert "Invalid JSON" in error_data["error"]["message"]
 
-    # async def test_empty_json_request_body(self, http_client: AsyncClient):
-    #     """Test server response to empty request body."""
+    async def test_empty_json_request_body(self, http_client: AsyncClient):
+        """Test server response to empty request body."""
 
-    #     # Send empty body
-    #     response = await http_client.post(self.server_url, content="", headers=self.default_headers)
+        # Send empty body
+        response = await http_client.post(self.server_url, content="", headers=self.default_headers)
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-    #     assert "Invalid JSON" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
+        assert "Invalid JSON" in error_data["error"]["message"]
 
-    # async def test_json_array_request_body(self, http_client: AsyncClient):
-    #     """Test server response to JSON array instead of object."""
+    async def test_json_array_request_body(self, http_client: AsyncClient):
+        """Test server response to JSON array instead of object."""
 
-    #     # Send JSON array instead of object
-    #     response = await http_client.post(
-    #         self.server_url,
-    #         json=[{"jsonrpc": "2.0", "method": "test", "id": 1}],
-    #         headers=self.default_headers,
-    #     )
+        # Send JSON array instead of object
+        response = await http_client.post(
+            self.server_url,
+            json=[{"jsonrpc": "2.0", "method": "test", "id": 1}],
+            headers=self.default_headers,
+        )
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-    #     assert "not a dictionary" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
+        assert "not a dictionary" in error_data["error"]["message"]
 
-    # async def test_json_string_request_body(self, http_client: AsyncClient):
-    #     """Test server response to JSON string instead of object."""
+    async def test_json_string_request_body(self, http_client: AsyncClient):
+        """Test server response to JSON string instead of object."""
 
-    #     # Send JSON string instead of object
-    #     response = await http_client.post(self.server_url, json="just a string", headers=self.default_headers)
+        # Send JSON string instead of object
+        response = await http_client.post(self.server_url, json="just a string", headers=self.default_headers)
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-    #     assert "not a dictionary" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
+        assert "not a dictionary" in error_data["error"]["message"]
 
-    # async def test_missing_jsonrpc_field(self, http_client: AsyncClient):
-    #     """Test server response to request missing jsonrpc field."""
+    async def test_missing_jsonrpc_field(self, http_client: AsyncClient):
+        """Test server response to request missing jsonrpc field."""
 
-    #     # Send request without jsonrpc field
-    #     response = await http_client.post(
-    #         self.server_url,
-    #         json={"method": "test", "id": 1},
-    #         headers=self.default_headers,
-    #     )
+        # Send request without jsonrpc field
+        response = await http_client.post(
+            self.server_url,
+            json={"method": "test", "id": 1},
+            headers=self.default_headers,
+        )
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-    #     assert "Not a JSON-RPC message" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
+        assert "Not a JSON-RPC message" in error_data["error"]["message"]
 
-    # async def test_wrong_jsonrpc_version(self, http_client: AsyncClient):
-    #     """Test server response to wrong JSON-RPC version."""
+    async def test_wrong_jsonrpc_version(self, http_client: AsyncClient):
+        """Test server response to wrong JSON-RPC version."""
 
-    #     # Send request with wrong JSON-RPC version
-    #     response = await http_client.post(
-    #         self.server_url,
-    #         json={"jsonrpc": "1.0", "method": "test", "id": 1},
-    #         headers=self.default_headers,
-    #     )
+        # Send request with wrong JSON-RPC version
+        response = await http_client.post(
+            self.server_url,
+            json={"jsonrpc": "1.0", "method": "test", "id": 1},
+            headers=self.default_headers,
+        )
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-    #     assert "Not a JSON-RPC 2.0 message" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
+        assert "Not a JSON-RPC 2.0 message" in error_data["error"]["message"]
 
-    # async def test_null_jsonrpc_field(self, http_client: AsyncClient):
-    #     """Test server response to null jsonrpc field."""
+    async def test_null_jsonrpc_field(self, http_client: AsyncClient):
+        """Test server response to null jsonrpc field."""
 
-    #     # Send request with null jsonrpc field
-    #     response = await http_client.post(
-    #         self.server_url,
-    #         json={"jsonrpc": None, "method": "test", "id": 1},
-    #         headers=self.default_headers,
-    #     )
+        # Send request with null jsonrpc field
+        response = await http_client.post(
+            self.server_url,
+            json={"jsonrpc": None, "method": "test", "id": 1},
+            headers=self.default_headers,
+        )
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-    #     assert "Not a JSON-RPC 2.0 message" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
+        assert "Not a JSON-RPC 2.0 message" in error_data["error"]["message"]
 
-    # async def test_empty_json_object(self, http_client: AsyncClient):
-    #     """Test server response to empty JSON object."""
+    async def test_empty_json_object(self, http_client: AsyncClient):
+        """Test server response to empty JSON object."""
 
-    #     # Send empty JSON object
-    #     response = await http_client.post(self.server_url, json={}, headers=self.default_headers)
+        # Send empty JSON object
+        response = await http_client.post(self.server_url, json={}, headers=self.default_headers)
 
-    #     assert response.status_code == 400
-    #     error_data = response.json()
-    #     assert "error" in error_data
-    #     assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-    #     assert "Not a JSON-RPC message" in error_data["error"]["message"]
+        assert response.status_code == 400
+        error_data = response.json()
+        assert "error" in error_data
+        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
+        assert "Not a JSON-RPC message" in error_data["error"]["message"]
 
-    # async def test_valid_jsonrpc_with_extra_fields(self, http_client: AsyncClient):
-    #     """Test that valid JSON-RPC with extra fields is accepted."""
+    async def test_valid_jsonrpc_with_extra_fields(self, http_client: AsyncClient):
+        """Test that valid JSON-RPC with extra fields is accepted."""
 
-    #     # Send valid JSON-RPC request with extra fields
-    #     response = await http_client.post(
-    #         self.server_url,
-    #         json={
-    #             "jsonrpc": "2.0",
-    #             "method": "initialize",
-    #             "params": {
-    #                 "protocolVersion": "2025-06-18",
-    #                 "capabilities": {},
-    #                 "clientInfo": {"name": "test-client", "version": "1.0.0"},
-    #             },
-    #             "id": 1,
-    #             "extra": "field",  # Extra field should be allowed
-    #         },
-    #         headers=self.default_headers,
-    #     )
+        # Send valid JSON-RPC request with extra fields
+        response = await http_client.post(
+            self.server_url,
+            json={
+                "jsonrpc": "2.0",
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-06-18",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test-client", "version": "1.0.0"},
+                },
+                "id": 1,
+                "extra": "field",  # Extra field should be allowed
+            },
+            headers=self.default_headers,
+        )
 
-    #     # Should not fail due to extra fields
-    #     assert response.status_code == 200
-    #     response_data = response.json()
-    #     assert "result" in response_data
+        # Should not fail due to extra fields
+        assert response.status_code == 200
+        response_data = response.json()
+        assert "result" in response_data
 
-    # async def test_malformed_json_cases(self, http_client: AsyncClient):
-    #     """Test various malformed JSON cases."""
+    async def test_malformed_json_cases(self, http_client: AsyncClient):
+        """Test various malformed JSON cases."""
 
-    #     malformed_cases = [
-    #         '{"jsonrpc": "2.0", "method": "test", "id": 1',  # Missing closing brace
-    #         '{"jsonrpc": "2.0", "method": "test", "id": 1,}',  # Trailing comma
-    #         '{"jsonrpc": "2.0", "method": "test", "id": }',  # Missing value
-    #         '{jsonrpc: "2.0", "method": "test", "id": 1}',  # Unquoted key
-    #     ]
+        malformed_cases = [
+            '{"jsonrpc": "2.0", "method": "test", "id": 1',  # Missing closing brace
+            '{"jsonrpc": "2.0", "method": "test", "id": 1,}',  # Trailing comma
+            '{"jsonrpc": "2.0", "method": "test", "id": }',  # Missing value
+            '{jsonrpc: "2.0", "method": "test", "id": 1}',  # Unquoted key
+        ]
 
-    #     for malformed_json in malformed_cases:
-    #         response = await http_client.post(
-    #             self.server_url,
-    #             content=malformed_json,
-    #             headers=self.default_headers,
-    #         )
+        for malformed_json in malformed_cases:
+            response = await http_client.post(
+                self.server_url,
+                content=malformed_json,
+                headers=self.default_headers,
+            )
 
-    #         assert response.status_code == 400
-    #         error_data = response.json()
-    #         assert "error" in error_data
-    #         assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-    #         assert "Invalid JSON" in error_data["error"]["message"]
+            assert response.status_code == 400
+            error_data = response.json()
+            assert "error" in error_data
+            assert error_data["error"]["code"] == -32700  # PARSE_ERROR
+            assert "Invalid JSON" in error_data["error"]["message"]
