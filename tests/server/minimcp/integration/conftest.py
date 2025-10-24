@@ -15,6 +15,11 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture(scope="session")
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture(scope="session")
 async def http_test_server_process() -> AsyncGenerator[Process | None, None]:
     """
     Session-scoped fixture that starts the HTTP test server once across all workers.
