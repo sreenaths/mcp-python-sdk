@@ -140,6 +140,20 @@ class TestResourceManager:
         assert result.description == "An async resource."
         assert "async_resource" in resource_manager._resources
 
+    def test_add_resource_template_with_complex_parameter_types(self, resource_manager: ResourceManager):
+        """Test resource templates with complex parameter types."""
+        # Note: Resource templates typically only support string parameters from URI
+        # But the function can have complex types that accept string values
+        def search_resource(query: str, page: str) -> dict[str, Any]:
+            """Search with query and page."""
+            return {"query": query, "page": int(page), "results": []}
+
+        result = resource_manager.add(search_resource, "search/{query}/{page}")
+
+        assert isinstance(result, types.ResourceTemplate)
+        assert result.name == "search_resource"
+        assert result.uriTemplate == "search/{query}/{page}"
+
     def test_add_resource_empty_uri_raises_error(self, resource_manager: ResourceManager):
         """Test that adding a resource with empty URI raises MCPValueError."""
 
@@ -180,6 +194,66 @@ class TestResourceManager:
         # Adding second resource with same URI should raise error
         with pytest.raises(MCPValueError, match="Resource file://test.txt already registered"):
             resource_manager.add(resource2, "file://test.txt")
+
+    def test_add_lambda_without_name_raises_error(self, resource_manager: ResourceManager):
+        """Test that lambda functions without custom name are rejected by MCPFunc."""
+        lambda_resource: Any = lambda: "content"  # noqa: E731  # type: ignore[misc]
+
+        with pytest.raises(MCPValueError, match="Lambda functions must be named"):
+            resource_manager.add(lambda_resource, "file://lambda.txt")  # type: ignore[arg-type]
+
+    def test_add_lambda_with_custom_name_succeeds(self, resource_manager: ResourceManager):
+        """Test that lambda functions with custom name work."""
+        lambda_resource: Any = lambda: "Lambda content"  # noqa: E731  # type: ignore[misc]
+
+        result = resource_manager.add(lambda_resource, "file://lambda.txt", name="custom_lambda")  # type: ignore[arg-type]
+        assert result.name == "custom_lambda"
+        assert "custom_lambda" in resource_manager._resources
+
+    def test_add_function_with_var_args_raises_error(self, resource_manager: ResourceManager):
+        """Test that functions with *args are rejected by MCPFunc."""
+
+        def resource_with_args(id: str, *args: str) -> str:
+            return f"Content {id}"
+
+        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
+            resource_manager.add(resource_with_args, "items/{id}")
+
+    def test_add_function_with_kwargs_raises_error(self, resource_manager: ResourceManager):
+        """Test that functions with **kwargs are rejected by MCPFunc."""
+
+        def resource_with_kwargs(id: str, **kwargs: Any) -> str:
+            return f"Content {id}"
+
+        with pytest.raises(MCPValueError, match="Functions with \\*\\*kwargs are not supported"):
+            resource_manager.add(resource_with_kwargs, "items/{id}")
+
+    def test_add_bound_method_as_resource(self, resource_manager: ResourceManager):
+        """Test that bound instance methods can be added as resources."""
+
+        class DataProvider:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def get_data(self) -> str:
+                """Get data with prefix."""
+                return f"{self.prefix}: data"
+
+        provider = DataProvider("TestPrefix")
+        result = resource_manager.add(provider.get_data, "data://test")
+
+        assert result.name == "get_data"
+        assert result.description == "Get data with prefix."
+        assert "get_data" in resource_manager._resources
+
+    def test_add_lambda_template_with_custom_name(self, resource_manager: ResourceManager):
+        """Test lambda with parameters as resource template."""
+        lambda_template: Any = lambda id: f"Item {id}"  # noqa: E731  # type: ignore[misc]
+
+        result = resource_manager.add(lambda_template, "items/{id}", name="lambda_template")  # type: ignore[arg-type]
+        assert isinstance(result, types.ResourceTemplate)
+        assert result.name == "lambda_template"
+        assert "lambda_template" in resource_manager._resources
 
     def test_add_duplicate_template_uri_raises_error(self, resource_manager: ResourceManager):
         """Test that adding resource templates with duplicate normalized URI raises MCPValueError."""
@@ -446,6 +520,119 @@ class TestResourceManager:
         with pytest.raises(MCPRuntimeError, match="Error reading resource failing_resource"):
             await resource_manager.read("file://failing.txt")
 
+    async def test_read_resource_with_type_validation(self, resource_manager: ResourceManager):
+        """Test that argument types are validated during resource reading."""
+
+        def typed_resource(count: int, name: str) -> str:
+            """A resource with strict types."""
+            return f"Item {count}: {name}"
+
+        resource_manager.add(typed_resource, "items/{count}/{name}")
+
+        # String numbers should be coerced to int by pydantic
+        result = await resource_manager.read("items/42/test")
+        result_list = list(result)
+        assert len(result_list) == 1
+        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        assert "Item 42: test" in content_str
+
+        # Invalid types should raise error wrapped in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error reading resource typed_resource"):
+            await resource_manager.read("items/not_a_number/test")
+
+    async def test_read_bound_method_resource(self, resource_manager: ResourceManager):
+        """Test reading a resource that is a bound method."""
+
+        class ContentGenerator:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def generate(self, item_id: str) -> str:
+                """Generate content with prefix."""
+                return f"{self.prefix}: Content for {item_id}"
+
+        generator = ContentGenerator("PREFIX")
+        resource_manager.add(generator.generate, "content/{item_id}")
+
+        result = await resource_manager.read("content/123")
+        result_list = list(result)
+
+        assert len(result_list) == 1
+        assert result_list[0].content == "PREFIX: Content for 123"
+
+    async def test_read_async_resource_exception_wrapped(self, resource_manager: ResourceManager):
+        """Test that exceptions from async resource functions are wrapped in MCPRuntimeError."""
+
+        async def async_failing_resource(should_fail: str) -> str:
+            """An async resource that can fail."""
+            await anyio.sleep(0.001)
+            if should_fail == "yes":
+                raise ValueError("Async failure")
+            return "Success"
+
+        resource_manager.add(async_failing_resource, "async/{should_fail}")
+
+        # Should succeed when not failing
+        result = await resource_manager.read("async/no")
+        result_list = list(result)
+        assert result_list[0].content == "Success"
+
+        # Should wrap exception in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error reading resource async_failing_resource") as exc_info:
+            await resource_manager.read("async/yes")
+        assert isinstance(exc_info.value.__cause__, ValueError)
+
+    async def test_read_resource_missing_template_parameters(self, resource_manager: ResourceManager):
+        """Test that missing required parameters raises an error."""
+
+        def multi_param_resource(id: str, category: str, format: str) -> str:
+            """A resource with multiple parameters."""
+            return f"{category}-{id}.{format}"
+
+        resource_manager.add(multi_param_resource, "items/{id}/{category}/{format}")
+
+        # Correct parameters should work
+        result = await resource_manager.read("items/123/books/json")
+        result_list = list(result)
+        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        assert "books-123.json" in content_str
+
+        # URI that doesn't match pattern should fail with "not found"
+        with pytest.raises(MCPValueError, match="Resource items/123 not found"):
+            await resource_manager.read("items/123")
+
+    async def test_read_by_name_with_type_coercion(self, resource_manager: ResourceManager):
+        """Test reading by name with type coercion."""
+
+        def numeric_resource(count: int, multiplier: float) -> str:
+            """A resource with numeric parameters."""
+            result = count * multiplier
+            return f"Result: {result}"
+
+        resource_manager.add(numeric_resource, "calc/{count}/{multiplier}")
+
+        # Pydantic should coerce strings to numbers
+        result = await resource_manager.read_by_name("numeric_resource", {"count": "10", "multiplier": "2.5"})
+        result_list = list(result)
+        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        assert "Result: 25.0" in content_str
+
+    async def test_read_resource_with_optional_parameters(self, resource_manager: ResourceManager):
+        """Test resource templates with optional parameters."""
+
+        def resource_with_defaults(id: str, format: str = "json") -> str:
+            """A resource with default parameter."""
+            return f"Item {id} in {format} format"
+
+        # Since URI templates require all parameters, optional params in function
+        # should match required params in URI template
+        resource_manager.add(resource_with_defaults, "items/{id}/{format}")
+
+        result = await resource_manager.read("items/123/xml")
+        result_list = list(result)
+        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        assert "Item 123 in xml format" in content_str
+
     def test_resource_options_typed_dict(self):
         """Test ResourceDefinition TypedDict structure."""
         # This tests the type structure - mainly for documentation
@@ -505,6 +692,54 @@ class TestResourceManager:
         assert not pattern.match("posts/123")
         assert not pattern.match("users/")
         assert not pattern.match("users/123/")
+
+    def test_convert_result_with_complex_objects(self, resource_manager: ResourceManager):
+        """Test _convert_result with complex objects that need JSON serialization."""
+        from pydantic import BaseModel
+
+        class CustomData(BaseModel):
+            name: str
+            value: int
+
+        custom_obj = CustomData(name="test", value=42)
+
+        result = resource_manager._convert_result(custom_obj)
+        assert isinstance(result, (str, bytes))
+        result_str = result if isinstance(result, str) else result.decode()
+        # Should contain JSON representation
+        assert "test" in result_str
+        assert "42" in result_str
+
+    def test_convert_result_with_bytes(self, resource_manager: ResourceManager):
+        """Test _convert_result preserves bytes."""
+        binary_data = b"Binary content"
+        result = resource_manager._convert_result(binary_data)
+        assert result == binary_data
+        assert isinstance(result, bytes)
+
+    def test_convert_result_with_string(self, resource_manager: ResourceManager):
+        """Test _convert_result preserves strings."""
+        text_data = "Text content"
+        result = resource_manager._convert_result(text_data)
+        assert result == text_data
+        assert isinstance(result, str)
+
+    async def test_resource_function_exception_with_cause(self, resource_manager: ResourceManager):
+        """Test that exception chaining is preserved."""
+
+        def resource_with_nested_error() -> str:
+            """A resource that raises a nested exception."""
+            try:
+                raise ValueError("Inner error")
+            except ValueError as e:
+                raise RuntimeError("Outer error") from e
+
+        resource_manager.add(resource_with_nested_error, "file://nested.txt")
+
+        with pytest.raises(MCPRuntimeError, match="Error reading resource resource_with_nested_error") as exc_info:
+            await resource_manager.read("file://nested.txt")
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
+        assert exc_info.value.__cause__.__cause__ is not None
 
     def test_check_similar_resource(self, resource_manager: ResourceManager):
         """Test the _check_similar_resource method."""

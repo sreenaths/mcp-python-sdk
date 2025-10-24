@@ -77,3 +77,102 @@ class TestStreamableHttpServer(HttpServerSuite):
         progress_values = [n["progress"] for n in progress_notifications]
         expected_progress = [0.1, 0.4, 0.7]
         assert progress_values == expected_progress, f"Expected progress {expected_progress}, got {progress_values}"
+
+    async def test_async_tool_execution(self, mcp_client: ClientSessionWithInit):
+        """Test that async tools (with MCPFunc) execute correctly with streamable HTTP transport."""
+        # Call the async tool with progress reporting
+        # Streamable HTTP supports progress notifications through SSE
+        result = await mcp_client.call_tool("add_with_progress", {"a": 15.0, "b": 25.0})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 40.0
+
+    async def test_progress_tool_with_type_coercion(self, mcp_client: ClientSessionWithInit):
+        """Test type coercion (string to float) works with progress-enabled async tools."""
+        # MCPFunc should coerce string arguments to float for the tool
+        result = await mcp_client.call_tool("add_with_progress", {"a": "5.5", "b": "3.2"})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert abs(float(result.content[0].text) - 8.7) < 0.0001  # Allow for floating point precision
+
+    async def test_progress_tool_error_wrapping(self, mcp_client: ClientSessionWithInit):
+        """Test that errors in async tools with progress are wrapped in MCPRuntimeError."""
+        # The divide tool should raise ValueError for division by zero
+        result = await mcp_client.call_tool("divide", {"a": 10.0, "b": 0.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Verify error message contains information about the wrapped exception
+        error_text = result.content[0].text.lower()
+        assert "cannot divide by zero" in error_text or "division by zero" in error_text
+
+    async def test_concurrent_progress_tools(self, mcp_client: ClientSessionWithInit):
+        """Test multiple async tools with progress reporting executing concurrently."""
+        import asyncio
+
+        async def make_call(call_id: str, a: float, b: float):
+            result = await mcp_client.call_tool("add_with_progress", {"a": a, "b": b})
+            return call_id, result
+
+        # Execute multiple calls concurrently
+        results = await asyncio.gather(
+            make_call("call1", 1.0, 2.0),
+            make_call("call2", 3.0, 4.0),
+            make_call("call3", 5.0, 6.0),
+        )
+
+        # Verify all results are correct
+        expected_results = {"call1": 3.0, "call2": 7.0, "call3": 11.0}
+        for call_id, result in results:
+            assert result.isError is False
+            assert len(result.content) == 1
+            assert result.content[0].type == "text"
+            assert float(result.content[0].text) == expected_results[call_id]
+
+    async def test_progress_tool_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
+        """Test that parameter validation errors are reported correctly for async progress tools."""
+        # Pass invalid parameter type that cannot be coerced
+        result = await mcp_client.call_tool("add_with_progress", {"a": "not_a_number", "b": 5.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Should get validation error before progress reporting starts
+        error_text = result.content[0].text.lower()
+        assert "validation" in error_text or "invalid" in error_text or "error" in error_text
+
+    async def test_progress_handler_exception_handling(self, mcp_client: ClientSessionWithInit):
+        """Test that exceptions in progress handlers don't break tool execution."""
+
+        async def failing_progress_handler(progress: float, total: float | None, message: str | None) -> None:
+            """Progress handler that throws an exception after first progress update."""
+            if progress > 0.2:
+                raise Exception("Progress handler error")
+
+        # Should still complete successfully despite handler errors
+        result = await mcp_client.call_tool(
+            "add_with_progress", {"a": 10.0, "b": 20.0}, progress_callback=failing_progress_handler
+        )
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 30.0
+
+    async def test_async_prompt_execution(self, mcp_client: ClientSessionWithInit):
+        """Test that prompts execute correctly through streamable HTTP."""
+        # Get a prompt from the server
+        result = await mcp_client.get_prompt("math_help", {"operation": "division"})
+
+        # Verify the prompt was returned correctly
+        assert result is not None
+        assert len(result.messages) > 0
+        # Check that the operation is mentioned in the prompt content
+        prompt_text = result.messages[0].content.text.lower()
+        assert "division" in prompt_text
+        assert "mathematical" in prompt_text or "math" in prompt_text

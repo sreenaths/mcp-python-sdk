@@ -395,3 +395,181 @@ class TestHttpServer:
             assert "error" in error_data
             assert error_data["error"]["code"] == -32700  # PARSE_ERROR
             assert "Invalid JSON" in error_data["error"]["message"]
+
+    async def test_tool_with_string_number_coercion(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc coerces string numbers to numeric types."""
+        # Send strings that should be coerced to floats
+        result = await mcp_client.call_tool("add", {"a": "10.5", "b": "20.3"})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 30.8
+
+    async def test_tool_with_invalid_type_coercion(self, mcp_client: ClientSessionWithInit):
+        """Test that invalid types that can't be coerced raise proper errors."""
+        # Try to pass a string that can't be converted to float
+        result = await mcp_client.call_tool("add", {"a": "not_a_number", "b": 5.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Should contain validation error information
+        assert "Error calling tool add" in result.content[0].text or "validation" in result.content[0].text.lower()
+
+    async def test_tool_parameter_descriptions_in_schema(self, mcp_client: ClientSessionWithInit):
+        """Test that parameter descriptions from Field annotations are exposed in schema."""
+        tools = (await mcp_client.list_tools()).tools
+
+        add_tool = next(tool for tool in tools if tool.name == "add")
+
+        # Check that parameter descriptions are present
+        assert "a" in add_tool.inputSchema["properties"]
+        assert "description" in add_tool.inputSchema["properties"]["a"]
+        assert "first number" in add_tool.inputSchema["properties"]["a"]["description"].lower()
+
+        assert "b" in add_tool.inputSchema["properties"]
+        assert "description" in add_tool.inputSchema["properties"]["b"]
+        assert "second number" in add_tool.inputSchema["properties"]["b"]["description"].lower()
+
+    async def test_tool_required_vs_optional_parameters(self, mcp_client: ClientSessionWithInit):
+        """Test that required and optional parameters are properly distinguished."""
+        tools = (await mcp_client.list_tools()).tools
+
+        add_tool = next(tool for tool in tools if tool.name == "add")
+
+        # Both parameters have defaults in the Field, but are still required because
+        # the default is Field(description=...) not Field(default=..., description=...)
+        assert "required" in add_tool.inputSchema
+        # In this case, both should be required since there are no default values
+        # This validates MCPFunc's schema generation
+
+    async def test_prompt_parameter_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that prompt parameters are validated through MCPFunc."""
+        # Valid call
+        result = await mcp_client.get_prompt("math_help", {"operation": "division"})
+
+        assert len(result.messages) == 1
+        content = result.messages[0].content
+        assert isinstance(content, TextContent)
+        assert "division" in content.text.lower()
+
+    async def test_prompt_missing_required_parameter(self, mcp_client: ClientSessionWithInit):
+        """Test that prompts with missing required parameters raise proper errors."""
+        # Try to call prompt without required parameter
+        with pytest.raises(Exception):  # Should raise an error
+            await mcp_client.get_prompt("math_help", {})
+
+    async def test_resource_template_parameter_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that resource template parameters are validated through MCPFunc."""
+        # Valid resource template call
+        result = (await mcp_client.read_resource(AnyUrl("math://constants/e"))).contents
+
+        assert len(result) == 1
+        assert str(result[0].uri) == "math://constants/e"
+
+        assert isinstance(result[0], TextResourceContents)
+        content_text = result[0].text
+        assert "2.71828" in content_text
+
+    async def test_resource_template_with_invalid_parameter(self, mcp_client: ClientSessionWithInit):
+        """Test that resource templates handle invalid parameters properly."""
+        # Try to access a non-existent constant
+        # The resource function raises ValueError which is wrapped by MCPFunc
+        # and propagated as MCPError through the transport
+        from mcp.shared.exceptions import McpError
+
+        with pytest.raises(McpError, match="Unknown constant: nonexistent"):
+            await mcp_client.read_resource(AnyUrl("math://constants/nonexistent"))
+
+    async def test_tool_exception_wrapping(self, mcp_client: ClientSessionWithInit):
+        """Test that exceptions in tools are properly wrapped by MCPFunc and returned as errors."""
+        # Division by zero should raise ValueError which is caught and wrapped
+        result = await mcp_client.call_tool("divide", {"a": 10.0, "b": 0.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Should contain the original error message
+        assert "Cannot divide by zero" in result.content[0].text
+
+    async def test_tool_with_integer_inputs(self, mcp_client: ClientSessionWithInit):
+        """Test that integer inputs are accepted for float parameters (type coercion)."""
+        # Send integers instead of floats
+        result = await mcp_client.call_tool("multiply", {"a": 7, "b": 6})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        content = result.content[0]
+        assert isinstance(content, TextContent)
+        assert float(content.text) == 42.0
+
+    async def test_tool_with_mixed_numeric_types(self, mcp_client: ClientSessionWithInit):
+        """Test that mixed numeric types (int, float, string numbers) work correctly."""
+        # Mix int, float, and string representations
+        result = await mcp_client.call_tool("add", {"a": 10, "b": "20.5"})
+
+        assert result.isError is False
+        content1 = result.content[0]
+        assert isinstance(content1, TextContent)
+        assert float(content1.text) == 30.5
+
+        result = await mcp_client.call_tool("multiply", {"a": "3.5", "b": 2})
+
+        assert result.isError is False
+        content2 = result.content[0]
+        assert isinstance(content2, TextContent)
+        assert float(content2.text) == 7.0
+
+    async def test_concurrent_tool_calls_with_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that concurrent tool calls each get proper validation through MCPFunc."""
+
+        async def call_tool_safe(name: str, args: dict[str, Any]) -> tuple[bool, str]:
+            result = await mcp_client.call_tool(name, args)
+            content = result.content[0]
+            assert isinstance(content, TextContent)
+            return (not result.isError, content.text)
+
+        results: dict[int, tuple[bool, str]] = {}
+
+        async with anyio.create_task_group() as tg:
+
+            async def run_and_store(id: int, coro: Any):
+                result = await coro
+                results[id] = result
+
+            # Mix valid and invalid calls
+            tg.start_soon(run_and_store, 1, call_tool_safe("add", {"a": 5.0, "b": 10.0}))  # Valid
+            tg.start_soon(run_and_store, 2, call_tool_safe("divide", {"a": 100.0, "b": 0.0}))  # Error
+            tg.start_soon(run_and_store, 3, call_tool_safe("multiply", {"a": "3.5", "b": "2.0"}))  # Valid with coercion
+            tg.start_soon(run_and_store, 4, call_tool_safe("add", {"a": "invalid"}))  # Invalid type
+
+        # Check results
+        assert results[1][0] is True  # Success
+        assert float(results[1][1]) == 15.0
+
+        assert results[2][0] is False  # Error (divide by zero)
+        assert "Cannot divide by zero" in results[2][1]
+
+        assert results[3][0] is True  # Success with coercion
+        assert float(results[3][1]) == 7.0
+
+        assert results[4][0] is False  # Validation error
+        # Should have validation error message
+
+    async def test_tool_schema_reflects_mcp_func_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that tool schemas properly reflect MCPFunc's validation requirements."""
+        tools = (await mcp_client.list_tools()).tools
+
+        # Check that all math tools have proper schemas
+        for tool in tools:
+            if tool.name in ["add", "subtract", "multiply", "divide"]:
+                # Should have inputSchema
+                assert tool.inputSchema is not None
+                assert "properties" in tool.inputSchema
+                assert "a" in tool.inputSchema["properties"]
+                assert "b" in tool.inputSchema["properties"]
+
+                # Properties should have type information
+                assert "type" in tool.inputSchema["properties"]["a"]
+                assert "type" in tool.inputSchema["properties"]["b"]

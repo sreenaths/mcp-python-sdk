@@ -142,6 +142,118 @@ class TestToolManager:
         with pytest.raises(MCPValueError, match="Tool tool1 already registered"):
             tool_manager.add(tool1)
 
+    def test_add_lambda_without_name_raises_error(self, tool_manager: ToolManager):
+        """Test that lambda functions without custom name are rejected by MCPFunc."""
+        lambda_tool: Any = lambda x: x * 2  # noqa: E731  # type: ignore[misc]
+
+        with pytest.raises(MCPValueError, match="Lambda functions must be named"):
+            tool_manager.add(lambda_tool)  # type: ignore[arg-type]
+
+    def test_add_lambda_with_custom_name_succeeds(self, tool_manager: ToolManager):
+        """Test that lambda functions with custom name work."""
+        lambda_tool: Any = lambda x: x * 2  # noqa: E731  # type: ignore[misc]
+
+        result = tool_manager.add(lambda_tool, name="custom_lambda")  # type: ignore[arg-type]
+        assert result.name == "custom_lambda"
+        assert "custom_lambda" in tool_manager._tools
+
+    def test_add_function_with_var_args_raises_error(self, tool_manager: ToolManager):
+        """Test that functions with *args are rejected by MCPFunc."""
+
+        def tool_with_args(x: int, *args: int) -> int:
+            return x + sum(args)
+
+        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
+            tool_manager.add(tool_with_args)
+
+    def test_add_function_with_kwargs_raises_error(self, tool_manager: ToolManager):
+        """Test that functions with **kwargs are rejected by MCPFunc."""
+
+        def tool_with_kwargs(x: int, **kwargs: Any) -> int:
+            return x
+
+        with pytest.raises(MCPValueError, match="Functions with \\*\\*kwargs are not supported"):
+            tool_manager.add(tool_with_kwargs)
+
+    def test_add_bound_method_as_tool(self, tool_manager: ToolManager):
+        """Test that bound instance methods can be added as tools."""
+
+        class Calculator:
+            def __init__(self, multiplier: int):
+                self.multiplier = multiplier
+
+            def calculate(self, value: int) -> int:
+                """Calculate with multiplier."""
+                return value * self.multiplier
+
+        calc = Calculator(10)
+        result = tool_manager.add(calc.calculate)
+
+        assert result.name == "calculate"
+        assert result.description == "Calculate with multiplier."
+        assert "calculate" in tool_manager._tools
+
+    def test_add_tool_with_no_parameters(self, tool_manager: ToolManager):
+        """Test adding a tool with no parameters."""
+
+        def no_param_tool() -> str:
+            """A tool with no parameters."""
+            return "result"
+
+        result = tool_manager.add(no_param_tool)
+
+        assert result.name == "no_param_tool"
+        assert result.inputSchema is not None
+        assert result.inputSchema.get("properties", {}) == {}
+
+    def test_add_tool_with_parameter_descriptions(self, tool_manager: ToolManager):
+        """Test that parameter descriptions are extracted from schema."""
+        from typing_extensions import Annotated
+
+        from pydantic import Field
+
+        def tool_with_descriptions(
+            count: Annotated[int, Field(description="The count value")],
+            message: Annotated[str, Field(description="The message to display")] = "default",
+        ) -> str:
+            """A tool with parameter descriptions."""
+            return f"{count}: {message}"
+
+        result = tool_manager.add(tool_with_descriptions)
+
+        assert result.inputSchema is not None
+        properties = result.inputSchema.get("properties", {})
+        assert "count" in properties
+        assert properties["count"].get("description") == "The count value"
+        assert "message" in properties
+        assert properties["message"].get("description") == "The message to display"
+
+    def test_add_tool_with_complex_parameter_types(self, tool_manager: ToolManager):
+        """Test tools with complex parameter types like lists, dicts, Pydantic models."""
+        from pydantic import BaseModel
+
+        class Config(BaseModel):
+            max_retries: int
+            timeout: float
+
+        def advanced_tool(items: list[str], config: Config, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+            """An advanced tool with complex types."""
+            return {"items": items, "config": config, "metadata": metadata}
+
+        result = tool_manager.add(advanced_tool)
+
+        assert result.name == "advanced_tool"
+        assert result.inputSchema is not None
+        properties = result.inputSchema.get("properties", {})
+        assert "items" in properties
+        assert "config" in properties
+        assert "metadata" in properties
+
+        required = result.inputSchema.get("required", [])
+        assert "items" in required
+        assert "config" in required
+        assert "metadata" not in required
+
     def test_add_duplicate_function_name_raises_error(self, tool_manager: ToolManager):
         """Test that adding functions with same name raises MCPValueError."""
 
@@ -286,7 +398,7 @@ class TestToolManager:
         assert result[1] == expected
 
     async def test_call_tool_argument_validation(self, tool_manager: ToolManager):
-        """Test that tool arguments are properly validated by func_metadata."""
+        """Test that tool arguments are properly validated by MCPFunc."""
 
         def strict_tool(required_int: int, optional_str: str = "default") -> str:
             """A tool with strict typing."""
@@ -301,13 +413,183 @@ class TestToolManager:
         result = await tool_manager.call("strict_tool", {"required_int": "42"})
         assert result[1]["result"] == "42-default"
 
-        # The actual validation happens in func_metadata, so we test that it's called
+        # The actual validation happens in MCPFunc, so we test that it's called
         # by ensuring the tool works with valid arguments and would fail with invalid ones
-        # through the func_metadata validation layer
+        # through the MCPFunc validation layer
 
         with pytest.raises(MCPRuntimeError, match="required_int") as exc_info:
             await tool_manager.call("strict_tool", {"invalid_int": 42})
         assert isinstance(exc_info.value.__cause__, ValidationError)
+
+    async def test_call_tool_with_type_validation(self, tool_manager: ToolManager):
+        """Test that argument types are validated during tool execution."""
+
+        def typed_tool(count: int, message: str) -> str:
+            """A tool with strict types."""
+            return f"Count {count}: {message}"
+
+        tool_manager.add(typed_tool)
+
+        # Valid types should work
+        result: Any = await tool_manager.call("typed_tool", {"count": 5, "message": "hello"})
+        assert result[1]["result"] == "Count 5: hello"
+
+        # String numbers should be coerced to int by pydantic
+        result = await tool_manager.call("typed_tool", {"count": "10", "message": "world"})
+        assert result[1]["result"] == "Count 10: world"
+
+        # Invalid types should raise error wrapped in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error calling tool typed_tool"):
+            await tool_manager.call("typed_tool", {"count": "not_a_number", "message": "hello"})
+
+    async def test_call_tool_with_no_parameters(self, tool_manager: ToolManager):
+        """Test calling tools that require no parameters."""
+
+        def static_tool() -> str:
+            """A tool with no parameters."""
+            return "static result"
+
+        tool_manager.add(static_tool)
+
+        # Call with empty dict
+        result: Any = await tool_manager.call("static_tool", {})
+        assert result[1]["result"] == "static result"
+
+    async def test_call_tool_with_complex_arguments(self, tool_manager: ToolManager):
+        """Test calling a tool with complex argument types."""
+        from pydantic import BaseModel
+
+        class TaskConfig(BaseModel):
+            priority: int
+            timeout: float
+
+        def process_task(task_ids: list[int], config: TaskConfig) -> dict[str, Any]:
+            """Process tasks with configuration."""
+            return {"processed": task_ids, "priority": config.priority, "timeout": config.timeout}
+
+        tool_manager.add(process_task)
+
+        result: Any = await tool_manager.call(
+            "process_task", {"task_ids": [1, 2, 3], "config": {"priority": 5, "timeout": 30.0}}
+        )
+
+        assert result[1]["processed"] == [1, 2, 3]
+        assert result[1]["priority"] == 5
+        assert result[1]["timeout"] == 30.0
+
+    async def test_call_bound_method_tool(self, tool_manager: ToolManager):
+        """Test calling a tool that is a bound method."""
+
+        class DataProcessor:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def process(self, data: str) -> str:
+                """Process data with prefix."""
+                return f"{self.prefix}: {data}"
+
+        processor = DataProcessor("PROCESSED")
+        tool_manager.add(processor.process)
+
+        result: Any = await tool_manager.call("process", {"data": "test data"})
+        assert result[1]["result"] == "PROCESSED: test data"
+
+    async def test_call_tool_function_raises_exception(self, tool_manager: ToolManager):
+        """Test that exceptions in tool functions are properly handled."""
+
+        def failing_tool(should_fail: bool) -> str:
+            """A tool that can fail."""
+            if should_fail:
+                raise ValueError("Tool failed")
+            return "Success"
+
+        tool_manager.add(failing_tool)
+
+        # Should succeed when not failing
+        result: Any = await tool_manager.call("failing_tool", {"should_fail": False})
+        assert result[1]["result"] == "Success"
+
+        # Should wrap exception in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error calling tool failing_tool") as exc_info:
+            await tool_manager.call("failing_tool", {"should_fail": True})
+        assert isinstance(exc_info.value.__cause__, ValueError)
+
+    async def test_call_async_tool_exception_wrapped(self, tool_manager: ToolManager):
+        """Test that exceptions from async tool functions are wrapped in MCPRuntimeError."""
+
+        async def async_failing_tool(should_fail: bool) -> str:
+            """An async tool that can fail."""
+            await anyio.sleep(0.001)
+            if should_fail:
+                raise RuntimeError("Async tool error")
+            return "Success"
+
+        tool_manager.add(async_failing_tool)
+
+        # Should succeed when not failing
+        result: Any = await tool_manager.call("async_failing_tool", {"should_fail": False})
+        assert result[1]["result"] == "Success"
+
+        # Should wrap exception in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error calling tool async_failing_tool") as exc_info:
+            await tool_manager.call("async_failing_tool", {"should_fail": True})
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+    async def test_call_tool_with_missing_required_arguments(self, tool_manager: ToolManager):
+        """Test that calling a tool with missing required arguments raises an error."""
+
+        def required_args_tool(required_param: str, optional_param: str = "default") -> str:
+            """A tool with required parameters."""
+            return f"{required_param}-{optional_param}"
+
+        tool_manager.add(required_args_tool)
+
+        # Should work with all params
+        result: Any = await tool_manager.call("required_args_tool", {"required_param": "value"})
+        assert result[1]["result"] == "value-default"
+
+        # Should fail without required param
+        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
+            await tool_manager.call("required_args_tool", {})
+        assert isinstance(exc_info.value.__cause__, ValidationError)
+
+        # Should fail with only optional param
+        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
+            await tool_manager.call("required_args_tool", {"optional_param": "value"})
+        assert isinstance(exc_info.value.__cause__, ValidationError)
+
+    async def test_call_tool_exception_with_cause(self, tool_manager: ToolManager):
+        """Test that exception chaining is preserved."""
+
+        def tool_with_nested_error(trigger: str) -> str:
+            """A tool that raises a nested exception."""
+            if trigger == "nested":
+                try:
+                    raise ValueError("Inner error")
+                except ValueError as e:
+                    raise RuntimeError("Outer error") from e
+            return "OK"
+
+        tool_manager.add(tool_with_nested_error)
+
+        with pytest.raises(MCPRuntimeError, match="Error calling tool tool_with_nested_error") as exc_info:
+            await tool_manager.call("tool_with_nested_error", {"trigger": "nested"})
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
+        assert exc_info.value.__cause__.__cause__ is not None
+
+    def test_decorator_usage(self, tool_manager: ToolManager):
+        """Test using ToolManager as a decorator."""
+
+        @tool_manager(name="decorated_tool", description="A decorated tool")
+        def decorated_function(value: int) -> int:
+            """A decorated tool function."""
+            return value * 3
+
+        # Verify the tool was added
+        assert "decorated_tool" in tool_manager._tools
+        tool, _ = tool_manager._tools["decorated_tool"]
+        assert tool.name == "decorated_tool"
+        assert tool.description == "A decorated tool"
 
     def test_tool_options_typed_dict(self):
         """Test ToolDefinition TypedDict structure."""
@@ -324,8 +606,8 @@ class TestToolManager:
         assert options["annotations"] == types.ToolAnnotations(title="test")
         assert options["meta"] == {"version": "1.0"}
 
-    def test_integration_with_func_metadata(self, tool_manager: ToolManager):
-        """Test integration with func_metadata for schema generation."""
+    def test_integration_with_mcp_func(self, tool_manager: ToolManager):
+        """Test integration with MCPFunc for schema generation."""
 
         def typed_tool(count: int, message: str, active: bool = True) -> dict[str, Any]:
             """A well-typed tool for testing schema generation."""

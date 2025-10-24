@@ -132,6 +132,66 @@ class TestPromptManager:
         assert required_arg.required is True
         assert optional_arg.required is False
 
+    def test_add_prompt_with_parameter_descriptions(self, prompt_manager: PromptManager):
+        """Test that parameter descriptions are extracted from schema."""
+        from typing_extensions import Annotated
+
+        from pydantic import Field
+
+        def prompt_with_descriptions(
+            topic: Annotated[str, Field(description="The topic to write about")],
+            style: Annotated[str, Field(description="Writing style to use")] = "formal",
+        ) -> str:
+            """A prompt with parameter descriptions."""
+            return f"Write about {topic} in {style} style"
+
+        result = prompt_manager.add(prompt_with_descriptions)
+
+        assert result.arguments is not None
+        assert len(result.arguments) == 2
+
+        # Verify descriptions are captured
+        topic_arg = next(arg for arg in result.arguments if arg.name == "topic")
+        style_arg = next(arg for arg in result.arguments if arg.name == "style")
+
+        assert topic_arg.description == "The topic to write about"
+        assert topic_arg.required is True
+        assert style_arg.description == "Writing style to use"
+        assert style_arg.required is False
+
+    def test_add_prompt_with_complex_parameter_types(self, prompt_manager: PromptManager):
+        """Test prompts with complex parameter types like lists, dicts, Pydantic models."""
+        from pydantic import BaseModel
+
+        class PromptConfig(BaseModel):
+            temperature: float
+            max_tokens: int
+
+        def advanced_prompt(
+            topics: list[str], config: PromptConfig, metadata: dict[str, str] | None = None
+        ) -> str:
+            """An advanced prompt with complex types."""
+            return f"Topics: {topics}, Config: {config}"
+
+        result = prompt_manager.add(advanced_prompt)
+
+        assert result.name == "advanced_prompt"
+        assert result.arguments is not None
+        assert len(result.arguments) == 3
+
+        # Verify all parameters are present
+        param_names = {arg.name for arg in result.arguments}
+        assert param_names == {"topics", "config", "metadata"}
+
+        # Verify required vs optional
+        topics_arg = next(arg for arg in result.arguments if arg.name == "topics")
+        config_arg = next(arg for arg in result.arguments if arg.name == "config")
+        metadata_arg = next(arg for arg in result.arguments if arg.name == "metadata")
+
+        assert topics_arg.required is True
+        assert config_arg.required is True
+        assert metadata_arg.required is False
+
     def test_add_duplicate_prompt_raises_error(self, prompt_manager: PromptManager):
         """Test that adding a prompt with duplicate name raises MCPValueError."""
 
@@ -160,6 +220,70 @@ class TestPromptManager:
         # Adding prompt again should raise error
         with pytest.raises(MCPValueError, match="Prompt prompt1 already registered"):
             prompt_manager.add(prompt1)
+
+    def test_add_lambda_without_name_raises_error(self, prompt_manager: PromptManager):
+        """Test that lambda functions without custom name are rejected by MCPFunc."""
+        lambda_prompt: Any = lambda x: f"Prompt: {x}"  # noqa: E731  # type: ignore[misc]
+
+        with pytest.raises(MCPValueError, match="Lambda functions must be named"):
+            prompt_manager.add(lambda_prompt)  # type: ignore[arg-type]
+
+    def test_add_lambda_with_custom_name_succeeds(self, prompt_manager: PromptManager):
+        """Test that lambda functions with custom name work."""
+        lambda_prompt: Any = lambda topic: f"Tell me about {topic}"  # noqa: E731  # type: ignore[misc]
+
+        result = prompt_manager.add(lambda_prompt, name="custom_lambda")  # type: ignore[arg-type]
+        assert result.name == "custom_lambda"
+        assert "custom_lambda" in prompt_manager._prompts
+
+    def test_add_function_with_var_args_raises_error(self, prompt_manager: PromptManager):
+        """Test that functions with *args are rejected by MCPFunc."""
+
+        def prompt_with_args(topic: str, *args: str) -> str:
+            return f"Topic: {topic}"
+
+        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
+            prompt_manager.add(prompt_with_args)
+
+    def test_add_function_with_kwargs_raises_error(self, prompt_manager: PromptManager):
+        """Test that functions with **kwargs are rejected by MCPFunc."""
+
+        def prompt_with_kwargs(topic: str, **kwargs: Any) -> str:
+            return f"Topic: {topic}"
+
+        with pytest.raises(MCPValueError, match="Functions with \\*\\*kwargs are not supported"):
+            prompt_manager.add(prompt_with_kwargs)
+
+    def test_add_bound_method_as_prompt(self, prompt_manager: PromptManager):
+        """Test that bound instance methods can be added as prompts."""
+
+        class PromptGenerator:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def generate(self, topic: str) -> str:
+                """Generate a prompt with prefix."""
+                return f"{self.prefix}: {topic}"
+
+        generator = PromptGenerator("Question")
+        result = prompt_manager.add(generator.generate)
+
+        assert result.name == "generate"
+        assert result.description == "Generate a prompt with prefix."
+        assert "generate" in prompt_manager._prompts
+
+    def test_add_prompt_with_no_parameters(self, prompt_manager: PromptManager):
+        """Test adding a prompt that requires no parameters."""
+
+        def static_prompt() -> str:
+            """A static prompt with no parameters."""
+            return "Write a creative story"
+
+        result = prompt_manager.add(static_prompt)
+
+        assert result.name == "static_prompt"
+        assert result.arguments is not None
+        assert len(result.arguments) == 0
 
     def test_remove_existing_prompt(self, prompt_manager: PromptManager):
         """Test removing an existing prompt."""
@@ -287,6 +411,91 @@ class TestPromptManager:
         with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
             await prompt_manager.get("strict_prompt", {"optional_param": "value"})
         assert isinstance(exc_info.value.__cause__, ValidationError)
+
+    async def test_get_prompt_with_type_validation(self, prompt_manager: PromptManager):
+        """Test that argument types are validated during execution."""
+
+        def typed_prompt(count: int, message: str) -> str:
+            """A prompt with strict types."""
+            return f"Message {count}: {message}"
+
+        prompt_manager.add(typed_prompt)
+
+        # Valid types should work
+        result = await prompt_manager.get("typed_prompt", {"count": 5, "message": "hello"})  # type: ignore[arg-type]
+        assert isinstance(result.messages[0].content, types.TextContent)
+        assert result.messages[0].content.text == "Message 5: hello"
+
+        # String numbers should be coerced to int by pydantic
+        result2 = await prompt_manager.get("typed_prompt", {"count": "10", "message": "world"})
+        assert isinstance(result2.messages[0].content, types.TextContent)
+        assert result2.messages[0].content.text == "Message 10: world"
+
+        # Invalid types should raise error wrapped in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error getting prompt typed_prompt"):
+            await prompt_manager.get("typed_prompt", {"count": "not_a_number", "message": "hello"})
+
+    async def test_get_prompt_with_no_parameters(self, prompt_manager: PromptManager):
+        """Test prompts that require no parameters."""
+
+        def static_prompt() -> str:
+            """A static prompt with no parameters."""
+            return "Write a creative story"
+
+        prompt_manager.add(static_prompt)
+
+        # Test with None
+        result = await prompt_manager.get("static_prompt", None)
+        assert len(result.messages) == 1
+        assert isinstance(result.messages[0].content, types.TextContent)
+        assert result.messages[0].content.text == "Write a creative story"
+
+        # Also test with empty dict
+        result2 = await prompt_manager.get("static_prompt", {})
+        assert len(result2.messages) == 1
+        assert isinstance(result2.messages[0].content, types.TextContent)
+        assert result2.messages[0].content.text == "Write a creative story"
+
+    async def test_get_prompt_with_complex_arguments(self, prompt_manager: PromptManager):
+        """Test getting a prompt with complex argument types."""
+        from pydantic import BaseModel
+
+        class GenerationConfig(BaseModel):
+            temperature: float
+            max_length: int
+
+        def complex_prompt(topics: list[str], config: GenerationConfig) -> str:
+            """A prompt with complex arguments."""
+            return f"Generate text about {', '.join(topics)} with temp={config.temperature}"
+
+        prompt_manager.add(complex_prompt)
+
+        result = await prompt_manager.get(
+            "complex_prompt", {"topics": ["AI", "ML"], "config": {"temperature": 0.7, "max_length": 100}}  # type: ignore[arg-type]
+        )
+
+        assert isinstance(result.messages[0].content, types.TextContent)
+        assert "AI, ML" in result.messages[0].content.text
+        assert "temp=0.7" in result.messages[0].content.text
+
+    async def test_get_bound_method_prompt(self, prompt_manager: PromptManager):
+        """Test getting a prompt that is a bound method."""
+
+        class PromptGenerator:
+            def __init__(self, prefix: str):
+                self.prefix = prefix
+
+            def generate(self, topic: str) -> str:
+                """Generate a prompt with prefix."""
+                return f"{self.prefix}: Tell me about {topic}"
+
+        generator = PromptGenerator("Question")
+        prompt_manager.add(generator.generate)
+
+        result = await prompt_manager.get("generate", {"topic": "Python"})
+
+        assert isinstance(result.messages[0].content, types.TextContent)
+        assert result.messages[0].content.text == "Question: Tell me about Python"
 
     async def test_get_prompt_returns_prompt_message_list(self, prompt_manager: PromptManager):
         """Test that prompt function returning PromptMessage list works correctly."""
@@ -476,3 +685,76 @@ class TestPromptManager:
 
         with pytest.raises(MCPRuntimeError, match="Could not convert prompt result to message"):
             prompt_manager._convert_result([invalid_dict])
+
+    def test_convert_result_with_complex_objects(self, prompt_manager: PromptManager):
+        """Test _convert_result with complex objects that need JSON serialization."""
+        from pydantic import BaseModel
+
+        class CustomData(BaseModel):
+            name: str
+            value: int
+
+        custom_obj = CustomData(name="test", value=42)
+
+        result = prompt_manager._convert_result(custom_obj)
+        assert len(result) == 1
+        assert result[0].role == "user"
+        assert isinstance(result[0].content, types.TextContent)
+        # Should contain JSON representation
+        assert "test" in result[0].content.text
+        assert "42" in result[0].content.text
+
+    def test_convert_result_empty_list(self, prompt_manager: PromptManager):
+        """Test _convert_result with empty list."""
+        result = prompt_manager._convert_result([])
+        assert len(result) == 0
+
+    async def test_get_prompt_returns_empty_list(self, prompt_manager: PromptManager):
+        """Test prompt function that returns empty list."""
+
+        def empty_prompt(topic: str) -> list[str]:
+            """A prompt that returns empty list."""
+            return []
+
+        prompt_manager.add(empty_prompt)
+
+        result = await prompt_manager.get("empty_prompt", {"topic": "test"})
+        assert len(result.messages) == 0
+
+    async def test_prompt_function_exception_wrapped(self, prompt_manager: PromptManager):
+        """Test that exceptions from prompt functions are wrapped in MCPRuntimeError."""
+
+        def failing_prompt(should_fail: bool) -> str:
+            """A prompt that can fail."""
+            if should_fail:
+                raise ValueError("Something went wrong")
+            return "Success"
+
+        prompt_manager.add(failing_prompt)
+
+        # Should succeed when not failing
+        result = await prompt_manager.get("failing_prompt", {"should_fail": False})  # type: ignore[arg-type]
+        assert isinstance(result.messages[0].content, types.TextContent)
+        assert result.messages[0].content.text == "Success"
+
+        # Should wrap exception in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error getting prompt failing_prompt") as exc_info:
+            await prompt_manager.get("failing_prompt", {"should_fail": True})  # type: ignore[arg-type]
+        assert isinstance(exc_info.value.__cause__, ValueError)
+
+    async def test_async_prompt_exception_wrapped(self, prompt_manager: PromptManager):
+        """Test that exceptions from async prompt functions are wrapped in MCPRuntimeError."""
+
+        async def async_failing_prompt(should_fail: bool) -> str:
+            """An async prompt that can fail."""
+            await anyio.sleep(0.001)
+            if should_fail:
+                raise RuntimeError("Async error")
+            return "Success"
+
+        prompt_manager.add(async_failing_prompt)
+
+        # Should wrap exception in MCPRuntimeError
+        with pytest.raises(MCPRuntimeError, match="Error getting prompt async_failing_prompt") as exc_info:
+            await prompt_manager.get("async_failing_prompt", {"should_fail": True})  # type: ignore[arg-type]
+        assert isinstance(exc_info.value.__cause__, RuntimeError)

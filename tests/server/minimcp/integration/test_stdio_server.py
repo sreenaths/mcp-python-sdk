@@ -249,3 +249,260 @@ class TestStdioServer:
         progress_values = [n["progress"] for n in progress_notifications]
         expected_progress = [0.1, 0.4, 0.7]
         assert progress_values == expected_progress, f"Expected progress {expected_progress}, got {progress_values}"
+
+    async def test_async_tool_execution(self, mcp_client: ClientSessionWithInit):
+        """Test that async tools (with MCPFunc) execute correctly with stdio transport."""
+        # Call the async tool with progress reporting
+        # Stdio supports progress notifications
+        result = await mcp_client.call_tool("add_with_progress", {"a": 15.0, "b": 25.0})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 40.0
+
+    async def test_progress_tool_with_type_coercion(self, mcp_client: ClientSessionWithInit):
+        """Test type coercion (string to float) works with progress-enabled async tools."""
+        # MCPFunc should coerce string arguments to float for the tool
+        result = await mcp_client.call_tool("add_with_progress", {"a": "5.5", "b": "3.2"})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert abs(float(result.content[0].text) - 8.7) < 0.0001  # Allow for floating point precision
+
+    async def test_progress_tool_error_wrapping(self, mcp_client: ClientSessionWithInit):
+        """Test that errors in async tools with progress are wrapped in MCPRuntimeError."""
+        # The divide tool should raise ValueError for division by zero
+        result = await mcp_client.call_tool("divide", {"a": 10.0, "b": 0.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Verify error message contains information about the wrapped exception
+        error_text = result.content[0].text.lower()
+        assert "cannot divide by zero" in error_text or "division by zero" in error_text
+
+    async def test_concurrent_progress_tools(self, mcp_client: ClientSessionWithInit):
+        """Test multiple async tools with progress reporting executing concurrently."""
+        import asyncio
+
+        async def make_call(call_id: str, a: float, b: float):
+            result = await mcp_client.call_tool("add_with_progress", {"a": a, "b": b})
+            return call_id, result
+
+        # Execute multiple calls concurrently
+        results = await asyncio.gather(
+            make_call("call1", 1.0, 2.0),
+            make_call("call2", 3.0, 4.0),
+            make_call("call3", 5.0, 6.0),
+        )
+
+        # Verify all results are correct
+        expected_results = {"call1": 3.0, "call2": 7.0, "call3": 11.0}
+        for call_id, result in results:
+            assert result.isError is False
+            assert len(result.content) == 1
+            assert result.content[0].type == "text"
+            assert float(result.content[0].text) == expected_results[call_id]
+
+    async def test_progress_tool_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
+        """Test that parameter validation errors are reported correctly for async progress tools."""
+        # Pass invalid parameter type that cannot be coerced
+        result = await mcp_client.call_tool("add_with_progress", {"a": "not_a_number", "b": 5.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Should get validation error before progress reporting starts
+        error_text = result.content[0].text.lower()
+        assert "validation" in error_text or "invalid" in error_text or "error" in error_text
+
+    async def test_progress_handler_exception_handling(self, mcp_client: ClientSessionWithInit):
+        """Test that exceptions in progress handlers don't break tool execution."""
+
+        async def failing_progress_handler(progress: float, total: float | None, message: str | None) -> None:
+            """Progress handler that throws an exception after first progress update."""
+            if progress > 0.2:
+                raise Exception("Progress handler error")
+
+        # Should still complete successfully despite handler errors
+        result = await mcp_client.call_tool(
+            "add_with_progress", {"a": 10.0, "b": 20.0}, progress_callback=failing_progress_handler
+        )
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 30.0
+
+    async def test_async_prompt_execution(self, mcp_client: ClientSessionWithInit):
+        """Test that prompts execute correctly through stdio transport."""
+        # Get a prompt from the server
+        result = await mcp_client.get_prompt("math_help", {"operation": "division"})
+
+        # Verify the prompt was returned correctly
+        assert result is not None
+        assert len(result.messages) > 0
+        # Check that the operation is mentioned in the prompt content
+        # Ensure content is TextContent before accessing .text
+        content = result.messages[0].content
+        assert isinstance(content, TextContent)
+        prompt_text = content.text.lower()
+        assert "division" in prompt_text
+        assert "mathematical" in prompt_text or "math" in prompt_text
+
+    # ====== MCPFunc Type Coercion and Validation Tests ======
+
+    async def test_tool_with_string_number_coercion(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc coerces string numbers to numeric types."""
+        # Pass string arguments that should be coerced to float
+        result = await mcp_client.call_tool("add", {"a": "10.5", "b": "5.5"})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 16.0
+
+    async def test_tool_with_invalid_type_coercion(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc properly rejects invalid type coercions."""
+        # Pass a string that cannot be coerced to a number
+        result = await mcp_client.call_tool("add", {"a": "not_a_number", "b": 5.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Error message should indicate validation error
+        error_text = result.content[0].text.lower()
+        assert "validation" in error_text or "invalid" in error_text or "error" in error_text
+
+    async def test_tool_with_integer_inputs(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc accepts integer inputs for float parameters."""
+        # Pass integer arguments for float parameters
+        result = await mcp_client.call_tool("multiply", {"a": 7, "b": 6})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 42.0
+
+    async def test_tool_with_mixed_numeric_types(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc handles mixed integer and float inputs correctly."""
+        # Pass a mix of int and float arguments
+        result = await mcp_client.call_tool("subtract", {"a": 20, "b": 7.5})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        assert float(result.content[0].text) == 12.5
+
+    # ====== MCPFunc Schema and Parameter Tests ======
+
+    async def test_tool_parameter_descriptions_in_schema(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc extracts parameter descriptions from Field annotations."""
+        tools = (await mcp_client.list_tools()).tools
+        add_tool = next(tool for tool in tools if tool.name == "add")
+
+        # Check that parameter descriptions from Field(description=...) are in the schema
+        assert "a" in add_tool.inputSchema["properties"]
+        assert "description" in add_tool.inputSchema["properties"]["a"]
+        assert "first number" in add_tool.inputSchema["properties"]["a"]["description"].lower()
+
+        assert "b" in add_tool.inputSchema["properties"]
+        assert "description" in add_tool.inputSchema["properties"]["b"]
+        assert "second number" in add_tool.inputSchema["properties"]["b"]["description"].lower()
+
+    async def test_tool_required_vs_optional_parameters(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc correctly identifies required vs optional parameters."""
+        tools = (await mcp_client.list_tools()).tools
+        add_tool = next(tool for tool in tools if tool.name == "add")
+
+        # Both a and b should be required for the add tool
+        assert "required" in add_tool.inputSchema
+        assert "a" in add_tool.inputSchema["required"]
+        assert "b" in add_tool.inputSchema["required"]
+
+    async def test_tool_schema_reflects_mcp_func_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that tool schemas reflect MCPFunc's validation rules."""
+        tools = (await mcp_client.list_tools()).tools
+        multiply_tool = next(tool for tool in tools if tool.name == "multiply")
+
+        # Check that the schema includes type information
+        assert multiply_tool.inputSchema["properties"]["a"]["type"] == "number"
+        assert multiply_tool.inputSchema["properties"]["b"]["type"] == "number"
+
+    # ====== MCPFunc Prompt Validation Tests ======
+
+    async def test_prompt_parameter_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc validates prompt parameters correctly."""
+        # Get a prompt with valid parameters
+        result = await mcp_client.get_prompt("math_help", {"operation": "multiplication"})
+
+        assert result is not None
+        assert len(result.messages) > 0
+        content = result.messages[0].content
+        assert isinstance(content, TextContent)
+        assert "multiplication" in content.text.lower()
+
+    async def test_prompt_missing_required_parameter(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc rejects prompts with missing required parameters."""
+        # Try to get a prompt without required parameter
+        with pytest.raises(Exception) as exc_info:
+            await mcp_client.get_prompt("math_help", {})
+
+        # Should get an error about missing parameter
+        error_message = str(exc_info.value).lower()
+        assert "field required" in error_message or "required" in error_message or "operation" in error_message
+
+    # ====== MCPFunc Resource Template Tests ======
+
+    async def test_resource_template_parameter_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc validates resource template parameters correctly."""
+        # Read a resource template with valid parameters
+        result = (await mcp_client.read_resource(AnyUrl("math://constants/e"))).contents
+
+        assert len(result) == 1
+        assert isinstance(result[0], TextResourceContents)
+        content_text = result[0].text
+        assert "2.71828" in content_text
+
+    async def test_resource_template_with_invalid_parameter(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc handles invalid resource template parameters."""
+        # Try to read a resource with an invalid parameter value
+        from mcp.shared.exceptions import McpError
+
+        with pytest.raises(McpError, match="Unknown constant: nonexistent"):
+            await mcp_client.read_resource(AnyUrl("math://constants/nonexistent"))
+
+    # ====== MCPFunc Error Handling Tests ======
+
+    async def test_tool_exception_wrapping(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc wraps tool exceptions in MCPRuntimeError."""
+        # Call divide with zero to trigger exception
+        result = await mcp_client.call_tool("divide", {"a": 100.0, "b": 0.0})
+
+        assert result.isError is True
+        assert len(result.content) == 1
+        assert result.content[0].type == "text"
+        # Verify the error message contains the original exception info
+        error_text = result.content[0].text
+        assert "Cannot divide by zero" in error_text
+
+    # ====== MCPFunc Concurrency Tests ======
+
+    async def test_concurrent_tool_calls_with_validation(self, mcp_client: ClientSessionWithInit):
+        """Test that MCPFunc handles concurrent tool calls with validation correctly."""
+        import asyncio
+
+        # Execute multiple different tools concurrently
+        results = await asyncio.gather(
+            mcp_client.call_tool("add", {"a": "10.5", "b": "5.5"}),  # Type coercion
+            mcp_client.call_tool("multiply", {"a": 3, "b": 4}),  # Integer to float
+            mcp_client.call_tool("subtract", {"a": 20.0, "b": 7.5}),  # Mixed types
+        )
+
+        # Verify all results
+        assert all(not result.isError for result in results)
+        assert float(results[0].content[0].text) == 16.0
+        assert float(results[1].content[0].text) == 12.0
+        assert float(results[2].content[0].text) == 12.5
