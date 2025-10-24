@@ -1,12 +1,12 @@
+import functools
 import inspect
-from functools import cached_property
 from typing import Any
 
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
 from mcp.types import AnyFunction
 
 
-# TODO: Do memory profiling of this class, find hot spots and optimize.
+# TODO: Do performance profiling of this class, find hot spots and optimize.
 # This needs to be lean and fast.
 class MCPFunc:
     """
@@ -16,7 +16,11 @@ class MCPFunc:
     func: AnyFunction
     name: str
     doc: str | None
+    is_async: bool
+
     meta: FuncMetadata
+    input_schema: dict[str, Any]
+    output_schema: dict[str, Any] | None
 
     def __init__(self, func: AnyFunction, name: str | None = None):
         self._validate_func(func)
@@ -24,7 +28,11 @@ class MCPFunc:
         self.func = func
         self.name = self._get_name(name)
         self.doc = inspect.getdoc(func)
+        self.is_async = self._is_async_callable(func)
+
         self.meta = func_metadata(func)
+        self.input_schema = self.meta.arg_model.model_json_schema(by_alias=True)
+        self.output_schema = self.meta.output_schema
 
     def _validate_func(self, func: AnyFunction) -> None:
         """
@@ -87,21 +95,7 @@ class MCPFunc:
 
         return name
 
-    @cached_property
-    def input_schema(self) -> dict[str, Any]:
-        """
-        Get the input schema of the function.
-        """
-        return self.meta.arg_model.model_json_schema(by_alias=True)
-
-    @cached_property
-    def output_schema(self) -> dict[str, Any] | None:
-        """
-        Get the output schema of the function.
-        """
-        return self.meta.output_schema
-
-    async def execute(self, args: dict[str, Any]) -> Any:
+    async def execute(self, args: dict[str, Any] | None = None) -> Any:
         """
         Validates and executes the function with the given arguments and returns the result.
         If the function is asynchronous, it will be awaited.
@@ -115,12 +109,12 @@ class MCPFunc:
         Raises:
             ValueError: If the arguments are not valid.
         """
-        parsed_args = self.meta.pre_parse_json(args)
-        validated_args = self.meta.arg_model.model_validate(parsed_args)
-        validated_args_dict = validated_args.model_dump_one_level()
-        result = self.func(**validated_args_dict)
+        return await self.meta.call_fn_with_arg_validation(self.func, self.is_async, args or {}, None)
 
-        if inspect.iscoroutine(result):
-            result = await result
+    def _is_async_callable(self, obj: AnyFunction) -> bool:
+        while isinstance(obj, functools.partial):
+            obj = obj.func
 
-        return result
+        return inspect.iscoroutinefunction(obj) or (
+            callable(obj) and inspect.iscoroutinefunction(getattr(obj, "__call__", None))
+        )

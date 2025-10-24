@@ -104,7 +104,7 @@ class PromptManager:
             prompt = self._prompts[name][0]
             prompt_func = self._prompts[name][1]
 
-            result = await prompt_func.execute(args or {})
+            result = await prompt_func.execute(args)
             messages = self._convert_result(result)
             logger.debug("Prompt %s handled with args %s", name, args)
 

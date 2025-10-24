@@ -190,7 +190,7 @@ class ResourceManager:
         self, details: _ResourceDetails, args: dict[str, str] | None
     ) -> Iterable[ReadResourceContents]:
         try:
-            result = await details.func.execute(args or {})
+            result = await details.func.execute(args)
 
             content = self._convert_result(result)
             logger.debug("Resource %s handled with args %s", details.resource.name, args)

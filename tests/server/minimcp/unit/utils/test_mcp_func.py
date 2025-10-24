@@ -727,26 +727,6 @@ class TestMCPFuncIntegration:
 class TestMCPFuncMemoryAndPerformance:
     """Test suite for memory and performance characteristics."""
 
-    def test_cached_property_not_computed_until_accessed(self):
-        """Test that cached properties are not computed until accessed."""
-
-        def func(a: int) -> int:
-            return a
-
-        mcp_func = MCPFunc(func)
-
-        # Check that cached properties exist as methods/descriptors
-        assert hasattr(type(mcp_func), "input_schema")
-        assert hasattr(type(mcp_func), "output_schema")
-
-        # Access them
-        _ = mcp_func.input_schema
-        _ = mcp_func.output_schema
-
-        # Verify they're cached (same object on repeated access)
-        assert mcp_func.input_schema is mcp_func.input_schema
-        assert mcp_func.output_schema is mcp_func.output_schema
-
     def test_multiple_instances_independent(self):
         """Test that multiple MCPFunc instances are independent."""
 
