@@ -58,10 +58,10 @@ class TestToolManager:
 
         # Verify internal state
         assert "sample_add_tool" in tool_manager._tools
-        tool, func, func_meta = tool_manager._tools["sample_add_tool"]
+        tool, tool_func = tool_manager._tools["sample_add_tool"]
         assert tool == result
-        assert func == sample_add_tool
-        assert func_meta is not None
+        assert tool_func.func == sample_add_tool
+        assert tool_func.meta is not None
 
     def test_add_tool_with_custom_options(self, tool_manager: ToolManager):
         """Test adding a tool with custom name, description, and metadata."""

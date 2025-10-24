@@ -1,12 +1,12 @@
 import logging
 import sys
+from typing import Any
 
 import anyio
 from fastapi import FastAPI, Request
-from mcp.server.minimcp import MiniMCP, starlette
 from pydantic import Field
-from typing import Any
 
+from mcp.server.minimcp import MiniMCP, starlette
 
 # Configure logging globally for the demo server
 logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)

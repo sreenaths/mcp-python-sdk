@@ -64,7 +64,7 @@ class TestResourceManager:
         assert "sample_resource" in resource_manager._resources
         resource_details = resource_manager._resources["sample_resource"]
         assert resource_details.resource == result
-        assert resource_details.func == sample_resource
+        assert resource_details.func.func == sample_resource
         assert resource_details.normalized_uri == "file://test.txt"
         assert resource_details.uri_pattern is None
 
@@ -505,49 +505,52 @@ class TestResourceManager:
         assert not pattern.match("users/")
         assert not pattern.match("users/123/")
 
-    def test_get_normalized_uri(self, resource_manager: ResourceManager):
-        """Test the _get_normalized_uri method."""
+    def test_check_similar_resource(self, resource_manager: ResourceManager):
+        """Test the _check_similar_resource method."""
 
-        assert resource_manager._get_normalized_uri("users/{id}") == "users/|"
-        assert resource_manager._get_normalized_uri("users/{user_id}/posts/{post_id}") == "users/|/posts/|"
-        assert resource_manager._get_normalized_uri("files/static.txt") == "files/static.txt"
-        assert resource_manager._get_normalized_uri("complex/{a}/path/{b}/file.{ext}") == "complex/|/path/|/file.|"
+        def sample_resource(id: str) -> str:
+            return f"sample content {id}"
 
-    def test_find_matching_details_exact_match(self, resource_manager: ResourceManager):
-        """Test _find_matching_details with exact URI match."""
+        resource_manager.add(sample_resource, name="sample_resource1", uri="users/{id}")
+
+        with pytest.raises(ValueError, match="Resource users/{different_id} already registered"):
+            resource_manager.add(sample_resource, "users/{different_id}")
+
+    def test_find_matching_resource_exact_match(self, resource_manager: ResourceManager):
+        """Test _find_matching_resource with exact URI match."""
 
         def static_resource() -> str:
             return "static content"
 
         resource_manager.add(static_resource, "file://static.txt")
 
-        details, args = resource_manager._find_matching_details("file://static.txt")
+        details, args = resource_manager._find_matching_resource("file://static.txt")
         assert details is not None
         assert args is None
         assert details.resource.name == "static_resource"
 
-    def test_find_matching_details_template_match(self, resource_manager: ResourceManager):
-        """Test _find_matching_details with template URI match."""
+    def test_find_matching_resource_template_match(self, resource_manager: ResourceManager):
+        """Test _find_matching_resource with template URI match."""
 
         def template_resource(id: str, format: str) -> str:
             return f"content-{id}-{format}"
 
         resource_manager.add(template_resource, "items/{id}.{format}")
 
-        details, args = resource_manager._find_matching_details("items/123.json")
+        details, args = resource_manager._find_matching_resource("items/123.json")
         assert details is not None
         assert args == {"id": "123", "format": "json"}
         assert details.resource.name == "template_resource"
 
-    def test_find_matching_details_no_match(self, resource_manager: ResourceManager):
-        """Test _find_matching_details with no matching URI."""
+    def test_find_matching_resource_no_match(self, resource_manager: ResourceManager):
+        """Test _find_matching_resource with no matching URI."""
 
         def some_resource() -> str:
             return "content"
 
         resource_manager.add(some_resource, "file://test.txt")
 
-        details, args = resource_manager._find_matching_details("file://nonexistent.txt")
+        details, args = resource_manager._find_matching_resource("file://nonexistent.txt")
         assert details is None
         assert args is None
 

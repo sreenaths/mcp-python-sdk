@@ -278,10 +278,10 @@ class TestPromptManager:
 
         prompt_manager.add(strict_prompt)
 
-        with pytest.raises(ValueError, match="Missing required arguments"):
+        with pytest.raises(ValueError, match="Field required"):
             await prompt_manager.get("strict_prompt", {})
 
-        with pytest.raises(ValueError, match="Missing required arguments"):
+        with pytest.raises(ValueError, match="Field required"):
             await prompt_manager.get("strict_prompt", {"optional_param": "value"})
 
     async def test_get_prompt_returns_prompt_message_list(self, prompt_manager: PromptManager):

@@ -1,5 +1,4 @@
 import builtins
-import inspect
 import logging
 from collections.abc import Callable
 from functools import partial
@@ -9,7 +8,7 @@ from typing_extensions import TypedDict, Unpack
 
 import mcp.types as types
 from mcp.server.lowlevel.server import CombinationContent, Server, StructuredContent, UnstructuredContent
-from mcp.server.minimcp.utils.func import FuncDetails, extract_func_details, validate_func_name
+from mcp.server.minimcp.utils.mcp_func import MCPFunc
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ class ToolManager:
     Manages tool definitions and handlers.
     """
 
-    _tools: dict[str, tuple[types.Tool, types.AnyFunction, FuncDetails]]
+    _tools: dict[str, tuple[types.Tool, MCPFunc]]
 
     def __init__(self, core: Server):
         self._tools = {}
@@ -51,26 +50,22 @@ class ToolManager:
         Add a tool to the MCP tool manager.
         """
 
-        details = extract_func_details(func)
-
-        tool_name = validate_func_name(kwargs.get("name", details.name))
-        if tool_name in self._tools:
-            raise ValueError(f"Tool {tool_name} already registered")
-
-        parameters = details.meta.arg_model.model_json_schema(by_alias=True)
+        tool_func = MCPFunc(func, kwargs.get("name"))
+        if tool_func.name in self._tools:
+            raise ValueError(f"Tool {tool_func.name} already registered")
 
         tool = types.Tool(
-            name=tool_name,
+            name=tool_func.name,
             title=kwargs.get("title", None),
-            description=kwargs.get("description", details.doc),
-            inputSchema=parameters,
-            outputSchema=details.meta.output_schema,
+            description=kwargs.get("description", tool_func.doc),
+            inputSchema=tool_func.input_schema,
+            outputSchema=tool_func.output_schema,
             annotations=kwargs.get("annotations", None),
             _meta=kwargs.get("meta", None),
         )
 
-        self._tools[tool_name] = (tool, func, details)
-        logger.debug("Tool %s added", tool_name)
+        self._tools[tool_func.name] = (tool, tool_func)
+        logger.debug("Tool %s added", tool_func.name)
 
         return tool
 
@@ -100,15 +95,9 @@ class ToolManager:
         if name not in self._tools:
             raise ValueError(f"Tool {name} not found")
 
-        _, handler, details = self._tools[name]
+        tool_func = self._tools[name][1]
 
-        parsed_args = details.meta.pre_parse_json(args)
-        validated_args = details.meta.arg_model.model_validate(parsed_args)
-
-        result = handler(**validated_args.model_dump_one_level())
-
-        if inspect.iscoroutine(result):
-            result = await result
-
+        result = await tool_func.execute(args)
         logger.debug("Tool %s handled with args %s", name, args)
-        return details.meta.convert_result(result)
+
+        return tool_func.meta.convert_result(result)
