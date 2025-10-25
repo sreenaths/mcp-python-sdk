@@ -3,11 +3,10 @@ from unittest.mock import Mock
 
 import anyio
 import pytest
-from pydantic import ValidationError
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import InvalidParamsError, MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.managers.prompt_manager import PromptDefinition, PromptManager
 
 pytestmark = pytest.mark.anyio
@@ -300,8 +299,8 @@ class TestPromptManager:
         assert "test_prompt" not in prompt_manager._prompts
 
     def test_remove_nonexistent_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that removing a non-existent prompt raises MCPValueError."""
-        with pytest.raises(MCPValueError, match="Prompt nonexistent not found"):
+        """Test that removing a non-existent prompt raises InvalidParamsError."""
+        with pytest.raises(InvalidParamsError, match="Prompt nonexistent not found"):
             prompt_manager.remove("nonexistent")
 
     async def test_list_prompts_empty(self, prompt_manager: PromptManager):
@@ -389,8 +388,8 @@ class TestPromptManager:
         assert result.messages[0].content.text == "Write a long casual piece about AI"
 
     async def test_get_nonexistent_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that getting a non-existent prompt raises MCPValueError."""
-        with pytest.raises(MCPValueError, match="Prompt nonexistent not found"):
+        """Test that getting a non-existent prompt raises InvalidParamsError."""
+        with pytest.raises(InvalidParamsError, match="Prompt nonexistent not found"):
             await prompt_manager.get("nonexistent", {})
 
     async def test_get_prompt_missing_required_arguments(self, prompt_manager: PromptManager):
@@ -402,13 +401,11 @@ class TestPromptManager:
 
         prompt_manager.add(strict_prompt)
 
-        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
+        with pytest.raises(InvalidParamsError, match="Missing required arguments"):
             await prompt_manager.get("strict_prompt", {})
-        assert isinstance(exc_info.value.__cause__, ValidationError)
 
-        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
+        with pytest.raises(InvalidParamsError, match="Missing required arguments"):
             await prompt_manager.get("strict_prompt", {"optional_param": "value"})
-        assert isinstance(exc_info.value.__cause__, ValidationError)
 
     async def test_get_prompt_with_type_validation(self, prompt_manager: PromptManager):
         """Test that argument types are validated during execution."""
@@ -640,7 +637,7 @@ class TestPromptManager:
         assert len(prompts) == 0
 
         # Getting removed prompt should fail
-        with pytest.raises(MCPValueError, match="Prompt story_prompt not found"):
+        with pytest.raises(InvalidParamsError, match="Prompt story_prompt not found"):
             await prompt_manager.get("story_prompt", {"genre": "mystery", "character": "detective"})
 
     def test_convert_result_edge_cases(self, prompt_manager: PromptManager):

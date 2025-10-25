@@ -11,7 +11,10 @@ import mcp.shared.version as version
 import mcp.types as types
 from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.server.minimcp.exceptions import (
+    ContextError,
     InvalidParamsError,
+    MCPRuntimeError,
+    MCPValueError,
     MethodNotFoundError,
     MiniMCPError,
     ParserError,
@@ -135,8 +138,7 @@ class MiniMCP(Generic[ScopeT]):
         except ResourceNotFoundError as e:
             logger.error("Resource not found: %s", e)
             response = json_rpc.build_error_message(types.RESOURCE_NOT_FOUND, message_id, e, e.data)
-        except MiniMCPError as e:
-            # Errors raised by the MiniMCP internals. Catches value, runtime, and context errors.
+        except (MCPValueError, MCPRuntimeError, ContextError, MiniMCPError) as e:
             logger.error("Error while handling message: %s", e)
             response = json_rpc.build_error_message(types.INTERNAL_ERROR, message_id, e)
         except Exception as e:

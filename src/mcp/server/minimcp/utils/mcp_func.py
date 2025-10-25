@@ -130,7 +130,7 @@ class MCPFunc:
             The result of the function execution.
 
         Raises:
-            MCPValueError: If the arguments are not valid.
+            ValidationError: If the arguments are not valid.
         """
         return await self.meta.call_fn_with_arg_validation(self.func, self.is_async, args or {}, None)
 

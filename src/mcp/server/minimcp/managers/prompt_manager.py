@@ -8,7 +8,7 @@ import pydantic_core
 from typing_extensions import TypedDict, Unpack
 
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import InvalidParamsError, MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 from mcp.types import AnyFunction, GetPromptResult, Prompt, PromptArgument, PromptMessage, TextContent
 
@@ -20,9 +20,10 @@ class PromptDefinition(TypedDict, total=False):
     Type definition for prompt parameters.
 
     Attributes:
-        name: Optional custom name for the prompt. If not provided, the function name is used.
-        title: Optional human-readable title for the prompt.
-        description: Optional description of what the prompt does. If not provided,
+        name: Optional unique identifier for the prompt. If not provided, the function name is used.
+            Must be unique across all prompts in the server.
+        title: Optional human-readable name for display purposes. Shows in client UIs (e.g., as slash commands).
+        description: Optional human-readable description of what the prompt does. If not provided,
             the function's docstring is used.
         meta: Optional metadata dictionary for additional prompt information.
     """
@@ -42,22 +43,31 @@ class PromptManager:
     with language models. Clients can discover available prompts, retrieve their contents, and provide
     arguments to customize them.
 
+    Prompts are designed to be user-controlled, exposed from servers to clients with the intention of
+    the user being able to explicitly select them for use. Typically, prompts are triggered through
+    user-initiated commands in the user interface, such as slash commands in chat applications.
+
     The PromptManager can be used as a decorator (@mcp.prompt()) or programmatically via the mcp.prompt.add(),
     mcp.prompt.list(), mcp.prompt.get() and mcp.prompt.remove() methods.
 
-    When a prompt handler is added, its name and description are automatically inferred from
-    the handler function. You can override these by passing explicit parameters as shown in
-    the examples below. Along with name and description you can also pass title and metadata.
-    Prompt arguments are always inferred from the function signature. Proper type annotations
-    are required in the function signature for correct argument extraction.
+    When a prompt handler is added, its name (unique identifier) and description are automatically inferred
+    from the handler function. You can override these by passing explicit parameters. The title field provides
+    a human-readable name for display in client UIs. Prompt arguments are always inferred from the function
+    signature. Type annotations are required in the function signature for correct argument extraction.
+
+    Prompt messages can contain different content types (text, image, audio, embedded resources) and support
+    optional annotations for metadata. Handler functions typically return strings or PromptMessage objects,
+    which are automatically converted to the appropriate message format with role ("user" or "assistant").
+
+    For more details, see: https://modelcontextprotocol.io/specification/2025-06-18/server/prompts
 
     Example:
         @mcp.prompt()
         def problem_solving(problem_description: str) -> str:
             return f"You are a math problem solver. Solve: {problem_description}"
 
-        # Or with explicit parameters
-        @mcp.prompt(name="solver", title="Problem Solver", description="Solve a math problem")
+        # With display title for UI (e.g., as slash command)
+        @mcp.prompt(name="solver", title="💡 Problem Solver", description="Solve a math problem")
         def problem_solving(problem_description: str) -> str:
             return f"You are a math problem solver. Solve: {problem_description}"
 
@@ -97,9 +107,9 @@ class PromptManager:
             A decorator function that adds the prompt handler.
 
         Example:
-            @mcp.prompt(name="custom_name", title="Custom Title")
-            def my_prompt(param: str) -> str:
-                return f"Prompt text: {param}"
+            @mcp.prompt(name="code_review", title="🔍 Request Code Review")
+            def code_review(code: str) -> str:
+                return f"Please review this code:\n{code}"
         """
         return partial(self.add, **kwargs)
 
@@ -109,18 +119,28 @@ class PromptManager:
         This is useful when the handler function is already defined and you have a function object
         that needs to be registered at runtime.
 
-        If not provided, the prompt name and description are automatically inferred from the function's
-        signature and docstring. Arguments are always automatically inferred from the function signature.
-        Type annotations are required in the function signature for proper argument extraction.
+        If not provided, the prompt name (unique identifier) and description are automatically inferred
+        from the function's name and docstring. The title field should be provided for better display in
+        client UIs. Arguments are always automatically inferred from the function signature. Type annotations
+        are required in the function signature for proper argument extraction and validation.
+
+        Handler functions can return:
+        - str: Converted to a user message with text content
+        - PromptMessage: Used as-is with role ("user" or "assistant") and content
+        - dict: Validated as PromptMessage
+        - list/tuple: Multiple messages of any of the above types
+        - Other types: JSON-serialized and converted to user messages
 
         Args:
-            func: The prompt handler function. Can be synchronous or asynchronous.
+            func: The prompt handler function. Can be synchronous or asynchronous. Should return
+                content that can be converted to PromptMessage objects.
             **kwargs: Optional prompt definition parameters to override inferred
                 values (name, title, description, meta). Parameters are defined in
                 the PromptDefinition class.
 
         Returns:
-            The registered Prompt object.
+            The registered Prompt object with unique identifier, optional title for display,
+            and inferred arguments.
 
         Raises:
             MCPValueError: If a prompt with the same name is already registered or if the function
@@ -145,16 +165,19 @@ class PromptManager:
         return prompt
 
     def _get_arguments(self, prompt_func: MCPFunc) -> list[PromptArgument]:
-        """Get the arguments for a prompt from the function signature.
+        """Get the arguments for a prompt from the function signature per MCP specification.
 
         Extracts parameter information from the function's input schema generated by MCPFunc,
-        converting them to PromptArgument objects for MCP protocol compliance.
+        converting them to PromptArgument objects for MCP protocol compliance. Each argument
+        includes a name, optional description, and required flag.
+
+        Arguments enable prompt customization and may be auto-completed through the MCP completion API.
 
         Args:
             prompt_func: The MCPFunc wrapper containing the function's input schema.
 
         Returns:
-            A list of PromptArgument objects describing the prompt's parameters.
+            A list of PromptArgument objects describing the prompt's parameters for customization.
         """
         arguments: list[PromptArgument] = []
 
@@ -182,10 +205,11 @@ class PromptManager:
             The removed Prompt object.
 
         Raises:
-            MCPValueError: If the prompt is not found.
+            InvalidParamsError: If the prompt is not found.
         """
         if name not in self._prompts:
-            raise MCPValueError(f"Prompt {name} not found")
+            # Raising InvalidParamsError as per MCP specification
+            raise InvalidParamsError(f"Prompt {name} not found")
 
         return self._prompts.pop(name)[0]
 
@@ -206,31 +230,40 @@ class PromptManager:
         return self.list()
 
     async def get(self, name: str, args: dict[str, str] | None) -> GetPromptResult:
-        """Retrieve and execute a prompt by name.
+        """Retrieve and execute a prompt by name, as specified in the MCP prompts/get protocol.
 
-        Executes the prompt handler function with the provided arguments using MCPFunc.execute(),
-        which validates arguments, executes the function, and returns the result.
-        The result is then converted to a list of PromptMessage objects.
+        This method handles the MCP prompts/get request, executing the prompt handler function with
+        the provided arguments. Arguments are validated against the prompt's argument definitions,
+        and the result is converted to PromptMessage objects per the MCP specification.
+
+        PromptMessages include a role ("user" or "assistant") and content, which can be text, image,
+        audio, or embedded resources. All content types support optional annotations for metadata.
 
         Args:
-            name: The name of the prompt to retrieve.
-            args: Optional dictionary of arguments to pass to the prompt handler.
-                Must include all required arguments defined in the prompt.
+            name: The unique identifier of the prompt to retrieve.
+            args: Optional dictionary of arguments to pass to the prompt handler. Must include all
+                required arguments as defined in the prompt. Arguments may be auto-completed through
+                the completion API.
 
         Returns:
-            GetPromptResult containing the prompt description, formatted messages,
-            and optional metadata.
+            GetPromptResult containing:
+            - description: Human-readable description of the prompt
+            - messages: List of PromptMessage objects with role and content
+            - _meta: Optional metadata
 
         Raises:
-            MCPValueError: If the prompt is not found.
-            MCPRuntimeError: If an error occurs during prompt execution or message conversion.
+            InvalidParamsError: If the prompt is not found (maps to -32602 Invalid params per spec).
+            MCPRuntimeError: If an error occurs during prompt execution or message conversion
+                (maps to -32603 Internal error per spec).
         """
         if name not in self._prompts:
-            raise MCPValueError(f"Prompt {name} not found")
+            # Raising InvalidParamsError as per MCP specification
+            raise InvalidParamsError(f"Prompt {name} not found")
+
+        prompt, prompt_func = self._prompts[name]
+        self._validate_args(prompt.arguments, args)
 
         try:
-            prompt, prompt_func = self._prompts[name]
-
             result = await prompt_func.execute(args)
             messages = self._convert_result(result)
             logger.debug("Prompt %s handled with args %s", name, args)
@@ -245,21 +278,56 @@ class PromptManager:
             logger.exception(msg)
             raise MCPRuntimeError(msg) from e
 
-    def _convert_result(self, result: Any) -> builtins.list[PromptMessage]:
-        """Convert prompt handler results to PromptMessage objects.
+    def _validate_args(
+        self, prompt_arguments: builtins.list[PromptArgument] | None, available_args: dict[str, Any] | None
+    ) -> None:
+        """Check for missing required arguments per MCP specification.
 
-        Supports multiple return types:
-        - PromptMessage objects (used as-is)
+        Args:
+            prompt_arguments: The arguments for the prompt.
+            available_args: The arguments provided by the client.
+
+        Raises:
+            InvalidParamsError: If the required arguments are not provided.
+        """
+        if prompt_arguments is None:
+            return
+
+        required_arg_names = {arg.name for arg in prompt_arguments if arg.required}
+        provided_arg_names = set(available_args or {})
+
+        missing_arg_names = required_arg_names - provided_arg_names
+        if missing_arg_names:
+            missing_arg_names_str = ", ".join(missing_arg_names)
+            raise InvalidParamsError(
+                f"Missing required arguments: Arguments {missing_arg_names_str} need to be provided"
+            )
+
+    def _convert_result(self, result: Any) -> builtins.list[PromptMessage]:
+        """Convert prompt handler results to PromptMessage objects per MCP specification.
+
+        PromptMessages must include a role ("user" or "assistant") and content. Per the MCP spec,
+        content can be:
+        - Text content (type: "text") - most common for natural language interactions
+        - Image content (type: "image") - base64-encoded with MIME type
+        - Audio content (type: "audio") - base64-encoded with MIME type
+        - Embedded resources (type: "resource") - server-side resources with URI
+
+        All content types support optional annotations for metadata about audience, priority,
+        and modification times.
+
+        Supports multiple return types from handler functions:
+        - PromptMessage objects (used as-is with role and content)
         - Dictionaries (validated as PromptMessage)
         - Strings (converted to user messages with text content)
-        - Other types (JSON-serialized and converted to user messages)
+        - Other types (JSON-serialized and converted to user messages with text content)
         - Lists/tuples of any of the above
 
         Args:
             result: The return value from a prompt handler function.
 
         Returns:
-            A list of PromptMessage objects.
+            A list of PromptMessage objects with role and content per MCP protocol.
 
         Raises:
             MCPRuntimeError: If the result cannot be converted to valid messages.
