@@ -5,13 +5,15 @@ Integration tests for MCP server using FastMCP stdio client.
 import os
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from typing import Any
 
+import anyio
 import pytest
 from helpers.client_session_with_init import ClientSessionWithInit
 from pydantic import AnyUrl
 
 from mcp import StdioServerParameters, stdio_client
-from mcp.types import TextContent, TextResourceContents
+from mcp.types import CallToolResult, TextContent, TextResourceContents
 
 pytestmark = pytest.mark.anyio
 
@@ -285,26 +287,27 @@ class TestStdioServer:
 
     async def test_concurrent_progress_tools(self, mcp_client: ClientSessionWithInit):
         """Test multiple async tools with progress reporting executing concurrently."""
-        import asyncio
+        # Store results keyed by call_id
+        results: dict[str, CallToolResult] = {}
 
-        async def make_call(call_id: str, a: float, b: float):
+        async def make_call(call_id: str, a: float, b: float) -> None:
             result = await mcp_client.call_tool("add_with_progress", {"a": a, "b": b})
-            return call_id, result
+            results[call_id] = result
 
         # Execute multiple calls concurrently
-        results = await asyncio.gather(
-            make_call("call1", 1.0, 2.0),
-            make_call("call2", 3.0, 4.0),
-            make_call("call3", 5.0, 6.0),
-        )
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(make_call, "call1", 1.0, 2.0)
+            tg.start_soon(make_call, "call2", 3.0, 4.0)
+            tg.start_soon(make_call, "call3", 5.0, 6.0)
 
         # Verify all results are correct
         expected_results = {"call1": 3.0, "call2": 7.0, "call3": 11.0}
-        for call_id, result in results:
-            assert result.isError is False
-            assert len(result.content) == 1
-            assert result.content[0].type == "text"
-            assert float(result.content[0].text) == expected_results[call_id]
+        for call_id, expected_value in expected_results.items():
+            assert results[call_id].isError is False
+            assert len(results[call_id].content) == 1
+            assert results[call_id].content[0].type == "text"
+            assert isinstance(results[call_id].content[0], TextContent)
+            assert float(results[call_id].content[0].text) == expected_value  # type: ignore[union-attr]
 
     async def test_progress_tool_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
         """Test that parameter validation errors are reported correctly for async progress tools."""
@@ -492,17 +495,29 @@ class TestStdioServer:
 
     async def test_concurrent_tool_calls_with_validation(self, mcp_client: ClientSessionWithInit):
         """Test that MCPFunc handles concurrent tool calls with validation correctly."""
-        import asyncio
 
         # Execute multiple different tools concurrently
-        results = await asyncio.gather(
-            mcp_client.call_tool("add", {"a": "10.5", "b": "5.5"}),  # Type coercion
-            mcp_client.call_tool("multiply", {"a": 3, "b": 4}),  # Integer to float
-            mcp_client.call_tool("subtract", {"a": 20.0, "b": 7.5}),  # Mixed types
-        )
+        results: dict[int, CallToolResult] = {}
+
+        async def execute_call(index: int, name: str, args: dict[str, Any]) -> None:
+            results[index] = await mcp_client.call_tool(name, args)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(execute_call, 0, "add", {"a": "10.5", "b": "5.5"})  # Type coercion
+            tg.start_soon(execute_call, 1, "multiply", {"a": 3, "b": 4})  # Integer to float
+            tg.start_soon(execute_call, 2, "subtract", {"a": 20.0, "b": 7.5})  # Mixed types
+
+        # Type guard: Verify all results were populated
+        assert len(results) == 3
 
         # Verify all results
-        assert all(not result.isError for result in results)
-        assert float(results[0].content[0].text) == 16.0
-        assert float(results[1].content[0].text) == 12.0
-        assert float(results[2].content[0].text) == 12.5
+        assert results[0].isError is False
+        assert results[1].isError is False
+        assert results[2].isError is False
+
+        assert results[0].structuredContent is not None
+        assert results[1].structuredContent is not None
+        assert results[2].structuredContent is not None
+        assert float(results[0].structuredContent["result"]) == 16.0
+        assert float(results[1].structuredContent["result"]) == 12.0
+        assert float(results[2].structuredContent["result"]) == 12.5

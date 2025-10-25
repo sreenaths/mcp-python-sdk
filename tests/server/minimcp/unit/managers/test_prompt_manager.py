@@ -134,7 +134,7 @@ class TestPromptManager:
 
     def test_add_prompt_with_parameter_descriptions(self, prompt_manager: PromptManager):
         """Test that parameter descriptions are extracted from schema."""
-        from typing_extensions import Annotated
+        from typing import Annotated
 
         from pydantic import Field
 
@@ -167,9 +167,7 @@ class TestPromptManager:
             temperature: float
             max_tokens: int
 
-        def advanced_prompt(
-            topics: list[str], config: PromptConfig, metadata: dict[str, str] | None = None
-        ) -> str:
+        def advanced_prompt(topics: list[str], config: PromptConfig, metadata: dict[str, str] | None = None) -> str:
             """An advanced prompt with complex types."""
             return f"Topics: {topics}, Config: {config}"
 
@@ -471,7 +469,8 @@ class TestPromptManager:
         prompt_manager.add(complex_prompt)
 
         result = await prompt_manager.get(
-            "complex_prompt", {"topics": ["AI", "ML"], "config": {"temperature": 0.7, "max_length": 100}}  # type: ignore[arg-type]
+            "complex_prompt",
+            {"topics": ["AI", "ML"], "config": {"temperature": 0.7, "max_length": 100}},  # type: ignore[arg-type]
         )
 
         assert isinstance(result.messages[0].content, types.TextContent)

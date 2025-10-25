@@ -5,10 +5,13 @@ This module imports all tests from test_http_server.py and runs them against the
 Additional streamable-specific tests can be added to this file.
 """
 
+import anyio
 import pytest
 from helpers.client_session_with_init import ClientSessionWithInit
 from servers.http_server import SERVER_HOST, SERVER_PORT, STREAMABLE_HTTP_MCP_PATH
 from test_http_server import TestHttpServer as HttpServerSuite
+
+from mcp.types import CallToolResult, TextContent
 
 pytestmark = pytest.mark.anyio
 
@@ -113,26 +116,27 @@ class TestStreamableHttpServer(HttpServerSuite):
 
     async def test_concurrent_progress_tools(self, mcp_client: ClientSessionWithInit):
         """Test multiple async tools with progress reporting executing concurrently."""
-        import asyncio
+        # Store results keyed by call_id
+        results: dict[str, CallToolResult] = {}
 
-        async def make_call(call_id: str, a: float, b: float):
+        async def make_call(call_id: str, a: float, b: float) -> None:
             result = await mcp_client.call_tool("add_with_progress", {"a": a, "b": b})
-            return call_id, result
+            results[call_id] = result
 
         # Execute multiple calls concurrently
-        results = await asyncio.gather(
-            make_call("call1", 1.0, 2.0),
-            make_call("call2", 3.0, 4.0),
-            make_call("call3", 5.0, 6.0),
-        )
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(make_call, "call1", 1.0, 2.0)
+            tg.start_soon(make_call, "call2", 3.0, 4.0)
+            tg.start_soon(make_call, "call3", 5.0, 6.0)
 
         # Verify all results are correct
         expected_results = {"call1": 3.0, "call2": 7.0, "call3": 11.0}
-        for call_id, result in results:
-            assert result.isError is False
-            assert len(result.content) == 1
-            assert result.content[0].type == "text"
-            assert float(result.content[0].text) == expected_results[call_id]
+        for call_id, expected_value in expected_results.items():
+            assert results[call_id].isError is False
+            assert len(results[call_id].content) == 1
+            assert results[call_id].content[0].type == "text"
+            assert isinstance(results[call_id].content[0], TextContent)
+            assert float(results[call_id].content[0].text) == expected_value  # type: ignore[union-attr]
 
     async def test_progress_tool_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
         """Test that parameter validation errors are reported correctly for async progress tools."""
@@ -173,6 +177,6 @@ class TestStreamableHttpServer(HttpServerSuite):
         assert result is not None
         assert len(result.messages) > 0
         # Check that the operation is mentioned in the prompt content
-        prompt_text = result.messages[0].content.text.lower()
+        prompt_text = result.messages[0].content.text  # type: ignore[union-attr]
         assert "division" in prompt_text
         assert "mathematical" in prompt_text or "math" in prompt_text

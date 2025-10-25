@@ -208,7 +208,7 @@ class TestToolManager:
 
     def test_add_tool_with_parameter_descriptions(self, tool_manager: ToolManager):
         """Test that parameter descriptions are extracted from schema."""
-        from typing_extensions import Annotated
+        from typing import Annotated
 
         from pydantic import Field
 
