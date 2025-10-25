@@ -80,7 +80,8 @@ class ResourceManager:
     support annotations (audience, priority) to provide hints about usage and importance.
 
     The ResourceManager can be used as a decorator (@mcp.resource(uri)) or programmatically via the
-    mcp.resource.add(), mcp.resource.list(), mcp.resource.read() and mcp.resource.remove() methods.
+    mcp.resource.add(), mcp.resource.list(), mcp.resource.list_templates(), mcp.resource.read(),
+    mcp.resource.read_by_name(), mcp.resource.remove() methods.
 
     When a resource handler is added, its name and description are automatically inferred from
     the handler function. You can override these by passing explicit parameters. For resource templates,

@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import InvalidParamsError, MCPRuntimeError, MCPValueError
 from mcp.server.minimcp.managers.tool_manager import ToolDefinition, ToolManager
 
 pytestmark = pytest.mark.anyio
@@ -297,8 +297,8 @@ class TestToolManager:
         assert "test_tool" not in tool_manager._tools
 
     def test_remove_nonexistent_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that removing a non-existent tool raises MCPValueError."""
-        with pytest.raises(MCPValueError, match="Tool nonexistent not found"):
+        """Test that removing a non-existent tool raises InvalidParamsError."""
+        with pytest.raises(InvalidParamsError, match="Unknown tool: nonexistent"):
             tool_manager.remove("nonexistent")
 
     async def test_list_tools_empty(self, tool_manager: ToolManager):
@@ -369,8 +369,8 @@ class TestToolManager:
         assert result[1]["result"] == "Hi, Bob!"
 
     async def test_call_nonexistent_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that calling a non-existent tool raises MCPValueError."""
-        with pytest.raises(MCPValueError, match="Tool nonexistent not found"):
+        """Test that calling a non-existent tool raises InvalidParamsError."""
+        with pytest.raises(InvalidParamsError, match="Unknown tool: nonexistent"):
             await tool_manager.call("nonexistent", {})
 
     async def test_call_tool_with_complex_return_type(self, tool_manager: ToolManager):
@@ -671,5 +671,5 @@ class TestToolManager:
         assert len(tools) == 0
 
         # Calling removed tool should fail
-        with pytest.raises(MCPValueError, match="Tool calculator not found"):
+        with pytest.raises(InvalidParamsError, match="Unknown tool: calculator"):
             await tool_manager.call("calculator", {"operation": "add", "a": 1, "b": 2})

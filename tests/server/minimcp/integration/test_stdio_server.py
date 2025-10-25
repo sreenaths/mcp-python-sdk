@@ -185,7 +185,7 @@ class TestStdioServer:
         assert result.isError is True
         assert len(result.content) == 1
         assert result.content[0].type == "text"
-        assert "nonexistent_tool not found" in result.content[0].text
+        assert "Unknown tool: nonexistent_tool" in result.content[0].text
 
     async def test_invalid_resource_read(self, mcp_client: ClientSessionWithInit):
         """Test reading a non-existent resource."""

@@ -19,7 +19,7 @@ MiniMCP fully implements the core prompts specification with the following compl
 - `prompts/list` - Lists all available prompts with their metadata
 - `prompts/get` - Retrieves a specific prompt by name with provided arguments
 
-#### User Interaction Model
+#### Prompts User Interaction Model
 
 Prompts are user-controlled and typically exposed in client UIs as selectable options:
 
@@ -27,7 +27,7 @@ Prompts are user-controlled and typically exposed in client UIs as selectable op
 - User-initiated invocation through interface commands
 - Display names (title) for improved UX in client applications
 
-#### Data Types
+#### Prompts Data Types
 
 **Prompt Definition:**
 
@@ -48,7 +48,7 @@ Prompts are user-controlled and typically exposed in client UIs as selectable op
 - `role`: Either "user" or "assistant" to indicate the speaker
 - `content`: Supports multiple content types per specification
 
-#### Content Types
+#### Prompts Content Types
 
 PromptMessages support all content types defined in the MCP specification:
 
@@ -138,7 +138,7 @@ MiniMCP follows the specification's error handling requirements:
 - Not currently implemented (marked as TODO)
 - Would enable enhanced argument suggestions in clients
 
-#### Implementation Considerations
+#### Prompts Implementation Considerations
 
 Per the specification, MiniMCP:
 
@@ -147,7 +147,7 @@ Per the specification, MiniMCP:
 - Supports proper capability negotiation ✅
 - Implements user-controlled interaction model ✅
 
-#### Security
+#### Prompts Security
 
 MiniMCP carefully validates all prompt inputs and outputs to prevent injection attacks or unauthorized access, as required by the specification.
 
@@ -199,7 +199,7 @@ MiniMCP fully implements the core resource specification with the following comp
 - JSON-serializable objects automatically converted to text
 - Returned as formatted JSON strings
 
-#### Annotations
+#### Resources Annotations
 
 Resources support optional annotations providing hints to clients:
 
@@ -268,6 +268,157 @@ Per the specification, MiniMCP:
 **Compliance Summary:** MiniMCP achieves ~95% specification compliance for resources, with all mandatory features fully implemented. The missing features (subscriptions and list change notifications) are explicitly optional per the specification.
 
 ### 3. Tools
+
+Tools in MCP allow servers to expose functionality that can be invoked by language models. According to the [official specification](https://modelcontextprotocol.io/specification/2025-06-18/server/tools), tools enable models to interact with external systems, such as querying databases, calling APIs, or performing computations. Each tool is uniquely identified by a name and includes metadata describing its schema.
+
+Tools are designed to be model-controlled, meaning the language model can discover and invoke tools automatically based on its contextual understanding and the user's prompts. However, for trust & safety, there should always be a human in the loop with the ability to deny tool invocations.
+
+MiniMCP fully implements the core tools specification with the following compliance:
+
+#### Tools - Core Protocol Messages
+
+**Fully Supported:**
+
+- `tools/list` - Lists all available tools with their metadata
+- `tools/call` - Invokes a specific tool by name with provided arguments
+
+#### Tools User Interaction Model
+
+Tools are model-controlled and can be invoked automatically by language models:
+
+- Models discover and invoke tools based on contextual understanding
+- Applications SHOULD provide UI that makes clear which tools are exposed to the AI model
+- Applications SHOULD insert visual indicators when tools are invoked
+- Applications SHOULD present confirmation prompts to users (human in the loop)
+
+#### Tools Data Types
+
+**Tool Definition:**
+
+- `name`: Unique identifier for the tool (automatically inferred from function name)
+- `title`: Optional human-readable name for display purposes in client UIs
+- `description`: Human-readable description of functionality (falls back to function docstring)
+- `inputSchema`: JSON Schema defining expected parameters (auto-generated from type annotations)
+- `outputSchema`: Optional JSON Schema defining expected output structure (auto-generated when specified)
+- `annotations`: Optional properties describing tool behavior (untrusted unless from trusted servers)
+
+**Tool Results:**
+
+Tools can return either unstructured or structured content:
+
+- **Unstructured content**: Returned in the `content` field, can contain multiple content items
+- **Structured content**: Returned in the `structuredContent` field as a JSON object
+- **Combination**: Both unstructured and structured content in the same result
+
+#### Tools Content Types
+
+Tool results support multiple content types per the specification:
+
+**Supported:**
+
+- **Text Content** (`type: "text"`) - Plain text results
+- **Image Content** (`type: "image"`) - Base64-encoded images with mimeType
+- **Audio Content** (`type: "audio"`) - Base64-encoded audio with mimeType
+- **Resource Links** (`type: "resource_link"`) - Links to resources that can be fetched by clients
+- **Embedded Resources** (`type: "resource"`) - Full resource objects embedded in the result
+
+All content types support optional annotations (audience, priority, lastModified) to provide metadata about the content.
+
+#### Tools Annotations
+
+Tool content supports the same annotation format used by resources and prompts:
+
+- `audience`: Array specifying intended audience (e.g., ["user"], ["assistant"], ["user", "assistant"])
+- `priority`: Float between 0 and 1 indicating importance (higher = more important)
+- `lastModified`: ISO 8601 timestamp indicating when the content was last modified
+
+#### Input/Output Schemas
+
+MiniMCP automatically generates:
+
+- `inputSchema`: JSON Schema from function type annotations using Pydantic models
+- `outputSchema`: Optional JSON Schema for validating structured results
+
+When an output schema is provided:
+
+- Servers MUST provide structured results that conform to this schema
+- Clients SHOULD validate structured results against this schema
+
+#### Capabilities
+
+MiniMCP declares the `tools` capability during initialization:
+
+```json
+{
+  "capabilities": {
+    "tools": {
+      "listChanged": true
+    }
+  }
+}
+```
+
+The `listChanged` indicator is configurable (default: true).
+
+#### Error Handling
+
+MiniMCP implements both error reporting mechanisms per the specification:
+
+**1. Protocol Errors (JSON-RPC errors):**
+
+- Unknown tools → `-32602` (Invalid params) via `InvalidParamsError`
+- Server errors → `-32603` (Internal error) via `MCPRuntimeError`
+
+**2. Tool Execution Errors:**
+
+- API failures, invalid input data, business logic errors
+- Returned in result with `isError: true`
+- Handled by the lowlevel server
+
+#### Optional Features
+
+**List Changed Notifications:**
+
+- ✅ Infrastructure exists with capability declaration
+- ✅ Enabled by default (`listChanged: true`)
+- `notifications/tools/list_changed` notification supported
+
+**Pagination:**
+
+- ⚠️ Mentioned in specification for `tools/list`
+- ❌ Not currently implemented (returns all tools)
+- Future enhancement opportunity
+
+#### Tools Implementation Considerations
+
+Per the specification, MiniMCP:
+
+- Validates all tool inputs against inputSchema ✅
+- Implements proper access controls via error handling ✅
+- Rate limiting should be implemented at application level ⚠️
+- Sanitizes tool outputs through content conversion ✅
+- Handles both synchronous and asynchronous handler functions ✅
+- Supports proper capability negotiation ✅
+
+#### Tools Security
+
+MiniMCP follows the security requirements from the specification:
+
+**Server-side (MiniMCP):**
+
+- Validates all tool inputs ✅
+- Implements proper error handling and access controls ✅
+- Sanitizes tool outputs ✅
+
+**Client-side (Application responsibility):**
+
+- Prompt for user confirmation on sensitive operations
+- Show tool inputs to the user before calling the server (avoid data exfiltration)
+- Validate tool results before passing to LLM
+- Implement timeouts for tool calls
+- Log tool usage for audit purposes
+
+**Compliance Summary:** MiniMCP achieves ~98% specification compliance for tools, with all mandatory features fully implemented. The only missing feature is pagination for `tools/list`, which is mentioned but not strictly required per the specification.
 
 ## Transport
 
