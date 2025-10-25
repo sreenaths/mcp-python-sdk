@@ -11,7 +11,29 @@ from mcp.types import AnyFunction
 # This needs to be lean and fast.
 class MCPFunc:
     """
-    A class that validates and MCP function and provides metadata about it.
+    Validates and wraps a Python function for use as an MCP handler.
+
+    Function is valid if it satisfies the following conditions:
+    - Is not a classmethod, staticmethod, or abstract method
+    - Does not use *args or **kwargs (MCP requires explicit parameters)
+    - Is a valid callable
+
+    Generates schemas from function signature and return type:
+    - input_schema: Function parameters (via Pydantic model)
+    - output_schema: Return type (optional, for structured output)
+
+    The execute() method can be called with a set of arguments. MCPFunc will
+    validate the arguments against the function signature, call the function,
+    and return the result.
+
+    Attributes:
+        func: The wrapped function
+        name: Function name (custom or inferred)
+        doc: Function docstring
+        is_async: Whether function is async
+        meta: FuncMetadata with Pydantic models and validation logic
+        input_schema: JSON schema for parameters
+        output_schema: JSON schema for return value (if structured output)
     """
 
     func: AnyFunction
@@ -113,6 +135,15 @@ class MCPFunc:
         return await self.meta.call_fn_with_arg_validation(self.func, self.is_async, args or {}, None)
 
     def _is_async_callable(self, obj: AnyFunction) -> bool:
+        """
+        Determines if a function is awaitable.
+
+        Args:
+            obj: The function to determine if it is asynchronous.
+
+        Returns:
+            True if the function is asynchronous, False otherwise.
+        """
         while isinstance(obj, functools.partial):
             obj = obj.func
 
