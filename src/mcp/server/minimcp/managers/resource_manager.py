@@ -11,7 +11,7 @@ from typing_extensions import TypedDict, Unpack
 
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError, ResourceNotFoundError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 from mcp.types import Annotations, AnyFunction, Resource, ResourceTemplate
 
@@ -330,10 +330,10 @@ class ResourceManager:
             The removed Resource or ResourceTemplate object.
 
         Raises:
-            MCPValueError: If the resource is not found.
+            ResourceNotFoundError: If the resource is not found.
         """
         if name not in self._resources:
-            raise MCPValueError(f"Resource {name} not found")
+            raise ResourceNotFoundError(f"Resource {name} not found", data={"name": name})
 
         return self._resources.pop(name).resource
 
@@ -385,11 +385,11 @@ class ResourceManager:
             An iterable of ReadResourceContents containing the resource data and MIME type.
 
         Raises:
-            MCPValueError: If the resource is not found.
+            ResourceNotFoundError: If the resource is not found.
             MCPRuntimeError: If an error occurs during resource execution.
         """
         if name not in self._resources:
-            raise MCPValueError(f"Resource {name} not found")
+            raise ResourceNotFoundError(f"Resource {name} not found", data={"name": name})
 
         details = self._resources[name]
         return await self._read_resource(details, args)
@@ -416,14 +416,14 @@ class ResourceManager:
             and other metadata per the MCP protocol.
 
         Raises:
-            MCPValueError: If no matching resource is found for the URI (returns -32002 error per spec).
+            ResourceNotFoundError: If no matching resource is found for the URI (returns -32002 error per spec).
             MCPRuntimeError: If an error occurs during resource execution.
         """
         uri = str(uri)
 
         details, args = self._find_matching_resource(uri)
         if details is None:
-            raise MCPValueError(f"Resource {uri} not found")
+            raise ResourceNotFoundError("Resource not found", data={"uri": uri})
 
         return await self._read_resource(details, args)
 

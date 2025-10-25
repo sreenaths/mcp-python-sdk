@@ -15,6 +15,7 @@ from mcp.server.minimcp.exceptions import (
     MethodNotFoundError,
     MiniMCPError,
     ParserError,
+    ResourceNotFoundError,
     UnsupportedRPCMessageType,
 )
 from mcp.server.minimcp.limiter import Limiter
@@ -131,10 +132,11 @@ class MiniMCP(Generic[ScopeT]):
         except TimeoutError as e:
             logger.error("Message handler timed out: %s", e)
             response = json_rpc.build_error_message(types.INTERNAL_ERROR, message_id, e)
+        except ResourceNotFoundError as e:
+            logger.error("Resource not found: %s", e)
+            response = json_rpc.build_error_message(types.RESOURCE_NOT_FOUND, message_id, e, e.data)
         except MiniMCPError as e:
             # Errors raised by the MiniMCP internals. Catches value, runtime, and context errors.
-            if self._raise_exceptions:
-                raise
             logger.error("Error while handling message: %s", e)
             response = json_rpc.build_error_message(types.INTERNAL_ERROR, message_id, e)
         except Exception as e:

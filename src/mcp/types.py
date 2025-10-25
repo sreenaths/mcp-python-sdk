@@ -157,6 +157,8 @@ METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
 
+RESOURCE_NOT_FOUND = -32002  # Used when a resource is not found as per the MCP specification.
+
 
 class ErrorData(BaseModel):
     """Error information for JSON-RPC error responses."""

@@ -1,3 +1,6 @@
+from typing import Any
+
+
 class MiniMCPError(Exception):
     """Base exception for all minimcp errors."""
 
@@ -29,7 +32,7 @@ class MethodNotFoundError(MiniMCPError):
     pass
 
 
-# --- MCP manager level errors ---
+# --- Generic manager level errors ---
 class ContextError(MiniMCPError):
     """
     Context error - Raised when when context access fails. Can be caused by:
@@ -51,3 +54,12 @@ class MCPRuntimeError(MiniMCPError):
     """MCP runtime error - Raised when a runtime error occurs."""
 
     pass
+
+
+# --- Resource manager level errors ---
+class ResourceNotFoundError(MCPValueError):
+    """Resource not found error - Raised when a resource is not found."""
+
+    def __init__(self, message: str, data: dict[str, Any] | None = None):
+        super().__init__(message, data)
+        self.data = data

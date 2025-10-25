@@ -7,7 +7,7 @@ import pytest
 import mcp.types as types
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError, ResourceNotFoundError
 from mcp.server.minimcp.managers.resource_manager import ResourceDefinition, ResourceManager, _uri_to_pattern
 
 pytestmark = pytest.mark.anyio
@@ -142,6 +142,7 @@ class TestResourceManager:
 
     def test_add_resource_template_with_complex_parameter_types(self, resource_manager: ResourceManager):
         """Test resource templates with complex parameter types."""
+
         # Note: Resource templates typically only support string parameters from URI
         # But the function can have complex types that accept string values
         def search_resource(query: str, page: str) -> dict[str, Any]:
@@ -472,7 +473,7 @@ class TestResourceManager:
 
     async def test_read_nonexistent_resource_raises_error(self, resource_manager: ResourceManager):
         """Test that reading a non-existent resource raises MCPValueError."""
-        with pytest.raises(MCPValueError, match="Resource file://nonexistent.txt not found"):
+        with pytest.raises(ResourceNotFoundError, match="Resource not found"):
             await resource_manager.read("file://nonexistent.txt")
 
     async def test_read_by_name_existing_resource(self, resource_manager: ResourceManager):
@@ -533,7 +534,9 @@ class TestResourceManager:
         result = await resource_manager.read("items/42/test")
         result_list = list(result)
         assert len(result_list) == 1
-        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        content_str = (
+            result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        )
         assert "Item 42: test" in content_str
 
         # Invalid types should raise error wrapped in MCPRuntimeError
@@ -594,11 +597,13 @@ class TestResourceManager:
         # Correct parameters should work
         result = await resource_manager.read("items/123/books/json")
         result_list = list(result)
-        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        content_str = (
+            result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        )
         assert "books-123.json" in content_str
 
         # URI that doesn't match pattern should fail with "not found"
-        with pytest.raises(MCPValueError, match="Resource items/123 not found"):
+        with pytest.raises(ResourceNotFoundError, match="Resource not found"):
             await resource_manager.read("items/123")
 
     async def test_read_by_name_with_type_coercion(self, resource_manager: ResourceManager):
@@ -614,7 +619,9 @@ class TestResourceManager:
         # Pydantic should coerce strings to numbers
         result = await resource_manager.read_by_name("numeric_resource", {"count": "10", "multiplier": "2.5"})
         result_list = list(result)
-        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        content_str = (
+            result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        )
         assert "Result: 25.0" in content_str
 
     async def test_read_resource_with_optional_parameters(self, resource_manager: ResourceManager):
@@ -630,7 +637,9 @@ class TestResourceManager:
 
         result = await resource_manager.read("items/123/xml")
         result_list = list(result)
-        content_str = result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        content_str = (
+            result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        )
         assert "Item 123 in xml format" in content_str
 
     def test_resource_options_typed_dict(self):
@@ -704,7 +713,7 @@ class TestResourceManager:
         custom_obj = CustomData(name="test", value=42)
 
         result = resource_manager._convert_result(custom_obj)
-        assert isinstance(result, (str, bytes))
+        assert isinstance(result, str | bytes)
         result_str = result if isinstance(result, str) else result.decode()
         # Should contain JSON representation
         assert "test" in result_str
@@ -857,8 +866,8 @@ class TestResourceManager:
         assert len(resource_manager.list_templates()) == 0
 
         # Reading removed resources should fail
-        with pytest.raises(MCPValueError, match="Resource config://app.json not found"):
+        with pytest.raises(ResourceNotFoundError, match="Resource not found"):
             await resource_manager.read("config://app.json")
 
-        with pytest.raises(MCPValueError, match="Resource user_resource not found"):
+        with pytest.raises(ResourceNotFoundError, match="Resource user_resource not found"):
             await resource_manager.read_by_name("user_resource", {"user_id": "123"})

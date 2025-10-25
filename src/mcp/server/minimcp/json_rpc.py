@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from mcp.server.minimcp.utils.model import to_dict
 from mcp.types import (
@@ -23,7 +24,12 @@ def build_notification_message(notification: ServerNotification) -> JSONRPCMessa
     return JSONRPCMessage(JSONRPCNotification(jsonrpc=JSON_RPC_VERSION, **to_dict(notification)))
 
 
-def build_error_message(error_code: int, message_id: str | int | None, error: BaseException) -> JSONRPCMessage:
+def build_error_message(
+    error_code: int,
+    message_id: str | int | None,
+    error: BaseException,
+    data: dict[str, Any] | None = None,
+) -> JSONRPCMessage:
     """
     Build a JSON-RPC error message with the given error code, message ID, and error.
 
@@ -37,7 +43,11 @@ def build_error_message(error_code: int, message_id: str | int | None, error: Ba
     """
 
     error_message = f"{error.__class__.__name__}: {error}"
-    error_data = ErrorData(code=error_code, message=error_message, data={"iso_timestamp": datetime.now().isoformat()})
+
+    data = data or {}
+    data["iso_timestamp"] = datetime.now().isoformat()
+
+    error_data = ErrorData(code=error_code, message=error_message, data=data)
 
     if message_id is None:
         message_id = "no-id"
