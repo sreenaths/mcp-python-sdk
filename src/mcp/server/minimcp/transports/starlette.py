@@ -5,6 +5,7 @@ This module provides integration functions to use MCP transports with the Starle
 web framework, including both standard HTTP and Server-Sent Events (SSE) based
 streamable HTTP transports.
 """
+
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 

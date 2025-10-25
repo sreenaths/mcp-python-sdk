@@ -17,10 +17,29 @@ JSON_RPC_VERSION = "2.0"
 
 
 def build_response_message(message_id: str | int, response: ServerResult) -> JSONRPCMessage:
+    """
+    Build a JSON-RPC response message with the given message ID and response.
+
+    Args:
+        message_id: The message ID to use.
+        response: The response object to build the response message from.
+
+    Returns:
+        A JSON-RPC response message object.
+    """
     return JSONRPCMessage(JSONRPCResponse(jsonrpc=JSON_RPC_VERSION, id=message_id, result=to_dict(response)))
 
 
 def build_notification_message(notification: ServerNotification) -> JSONRPCMessage:
+    """
+    Build a JSON-RPC notification message with the given notification.
+
+    Args:
+        notification: The notification object to build the notification message from.
+
+    Returns:
+        A JSON-RPC notification message object.
+    """
     return JSONRPCMessage(JSONRPCNotification(jsonrpc=JSON_RPC_VERSION, **to_dict(notification)))
 
 

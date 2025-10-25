@@ -27,6 +27,7 @@ class HTTPResult:
         media_type: The MIME type of the response content (e.g., "application/json").
         headers: Additional HTTP headers to include in the response.
     """
+
     status_code: HTTPStatus
     content: Message | NoMessage | MemoryObjectReceiveStream[Message] | None = None
     media_type: str | None = None
