@@ -256,7 +256,7 @@ MiniMCP follows the specification's error handling requirements:
 - URI validation performed before resource operations
 - Proper error messages with context (URI, resource name)
 
-#### Security Considerations
+#### Resources - Security Considerations
 
 Per the specification, MiniMCP:
 
@@ -432,11 +432,110 @@ The official MCP specification currently defines two standard transport mechanis
 
 ### 1. Stdio Transport
 
-Consistent with the standard, stdio enables bidirectional communication and is commonly employed for developing local MCP servers.
+The stdio transport implements the standard MCP communication mechanism over standard input/output streams, as defined in the [official specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#stdio). This transport enables bidirectional communication and is commonly employed for developing local MCP servers.
 
-- The server reads messages from its standard input (stdin) and sends messages to its standard output (stdout).
-- Messages are delimited by newlines.
-- Only valid MCP messages should be written into stdin and stdout.
+MiniMCP's stdio transport achieves full specification compliance with the following implementation:
+
+#### Stdio Core Requirements
+
+**Fully Supported:**
+
+- **UTF-8 Encoding**: All JSON-RPC messages MUST be UTF-8 encoded ✅
+- **Stdin/Stdout Communication**: Server reads from stdin, writes to stdout ✅
+- **Individual Messages**: Each message is a single JSON-RPC request, notification, or response ✅
+- **Newline Delimited**: Messages are delimited by newlines ✅
+- **No Embedded Newlines**: Messages MUST NOT contain embedded newlines ✅
+- **Message Validation**: Only valid MCP messages written to stdout ✅
+
+#### Message Format
+
+Per the specification, MiniMCP stdio transport ensures:
+
+- Messages are newline-delimited (`\n` separator)
+- Each line represents exactly one JSON-RPC message
+- No embedded newlines (`\n` or `\r`) within message content
+- UTF-8 encoding throughout the transport layer
+- Line buffering for immediate message delivery
+
+#### Validation
+
+MiniMCP stdio transport validates all outgoing messages:
+
+- **Embedded Newline Check**: Raises `ValueError` if message contains `\n` or `\r` characters
+- **Message Type Check**: Ensures only `Message` or `NoMessage` types are processed
+- **Encoding Validation**: UTF-8 encoding enforced via `TextIOWrapper`
+
+#### Logging Requirements
+
+Per the specification: "The server MAY write UTF-8 strings to its standard error (stderr) for logging purposes."
+
+MiniMCP follows this requirement:
+
+- All logging MUST be configured to write to stderr, not stdout
+- Example servers demonstrate proper logging configuration
+- Documentation explicitly warns developers about this requirement
+- Improper logging configuration would violate the stdout message constraint
+
+**Example logging configuration:**
+
+```python
+import sys
+import logging
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+```
+
+#### Stdio Implementation Details
+
+- **Subprocess Model**: Client launches server as subprocess
+- **Bidirectional Communication**: Full duplex communication over stdin/stdout
+- **Concurrent Handling**: Messages processed concurrently via anyio task groups
+- **Backpressure**: anyio.wrap_file naturally applies backpressure
+- **Error Handling**: Exceptions from handlers trigger transport shutdown
+
+#### Stdin Behavior
+
+- Reads JSON-RPC messages line-by-line from standard input
+- Strips whitespace and skips empty lines
+- Each non-empty line spawned as concurrent task
+- Async iteration over stdin stream
+
+#### Stdout Behavior
+
+- Writes JSON-RPC messages to standard output
+- Appends newline delimiter to each message
+- Line buffering enabled for immediate delivery
+- Validates no embedded newlines before writing
+- Handles `NoMessage` enum for notification responses
+
+#### Stdio - Security Considerations
+
+MiniMCP stdio transport implements security best practices:
+
+- Message validation before writing to stdout ✅
+- Proper stream isolation (stdout for messages, stderr for logs) ✅
+- No user input written directly to stdout without validation ✅
+- Error messages sanitized and logged to stderr ✅
+
+#### Stdio Compliance Summary
+
+**Compliance: 100%** ✅
+
+MiniMCP's stdio transport achieves full specification compliance with all requirements:
+
+- ✅ UTF-8 encoded messages
+- ✅ Newline-delimited messages
+- ✅ No embedded newlines (validated)
+- ✅ Stdin/stdout communication model
+- ✅ Individual JSON-RPC messages
+- ✅ Proper logging to stderr (documented)
+- ✅ Concurrent message handling
+- ✅ Line buffering for immediate delivery
+
+The implementation includes comprehensive unit tests covering all specification requirements, including edge cases for embedded newline validation.
 
 ### 2. HTTP Transport
 

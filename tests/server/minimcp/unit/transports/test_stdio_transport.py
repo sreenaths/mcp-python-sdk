@@ -56,6 +56,56 @@ class TestWriteMsg:
             # Should write even empty string with newline (no flush in current implementation)
             mock_stdout.write.assert_called_once_with("\n")
 
+    async def test_write_msg_rejects_embedded_newline(self):
+        """Test write_msg rejects messages with embedded newlines per MCP spec."""
+        mock_stdout = AsyncMock()
+
+        with patch.object(stdio, "_stdout", mock_stdout):
+            message_with_newline = '{"jsonrpc":"2.0",\n"id":1}'
+
+            with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
+                await stdio.write_msg(message_with_newline)
+
+            # Should not write anything
+            mock_stdout.write.assert_not_called()
+
+    async def test_write_msg_rejects_embedded_carriage_return(self):
+        """Test write_msg rejects messages with embedded carriage returns per MCP spec."""
+        mock_stdout = AsyncMock()
+
+        with patch.object(stdio, "_stdout", mock_stdout):
+            message_with_cr = '{"jsonrpc":"2.0",\r"id":1}'
+
+            with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
+                await stdio.write_msg(message_with_cr)
+
+            # Should not write anything
+            mock_stdout.write.assert_not_called()
+
+    async def test_write_msg_rejects_embedded_crlf(self):
+        """Test write_msg rejects messages with embedded CRLF sequences per MCP spec."""
+        mock_stdout = AsyncMock()
+
+        with patch.object(stdio, "_stdout", mock_stdout):
+            message_with_crlf = '{"jsonrpc":"2.0",\r\n"id":1}'
+
+            with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
+                await stdio.write_msg(message_with_crlf)
+
+            # Should not write anything
+            mock_stdout.write.assert_not_called()
+
+    async def test_write_msg_accepts_message_without_embedded_newlines(self):
+        """Test write_msg accepts valid messages without embedded newlines."""
+        mock_stdout = AsyncMock()
+
+        with patch.object(stdio, "_stdout", mock_stdout):
+            valid_message = '{"jsonrpc":"2.0","id":1,"method":"test","params":{"key":"value"}}'
+            await stdio.write_msg(valid_message)
+
+            # Should write message with trailing newline
+            mock_stdout.write.assert_called_once_with(valid_message + "\n")
+
 
 class TestHandleMessage:
     """Test suite for _handle_message internal function."""
