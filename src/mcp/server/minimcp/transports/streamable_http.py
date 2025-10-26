@@ -71,7 +71,7 @@ class StreamableHTTPTransport(HTTPTransportBase):
         else:
             return self._handle_unsupported_request({"POST"})
 
-    async def _runner(
+    async def _run_handler(
         self,
         handler: StreamableHTTPRequestHandler,
         body: str,
@@ -133,7 +133,10 @@ class StreamableHTTPTransport(HTTPTransportBase):
         if self._tg is None:
             raise MCPRuntimeError("StreamableHTTPTransport was not started")
 
-        response = await self._tg.start(self._runner, handler, body)
+        # Start the _run_handler in a separate task and await for readiness. Runner manages the handler execution
+        # and sends the response back to the transport. Once ready the _run_handler returns a MemoryObjectReceiveStream,
+        # Message or NoMessage and continue running in the background until the handler finishes executing.
+        response = await self._tg.start(self._run_handler, handler, body)
         logger.debug("Handling completed. Response: %s", response)
 
         if isinstance(response, MemoryObjectReceiveStream):
