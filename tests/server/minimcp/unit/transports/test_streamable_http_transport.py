@@ -262,26 +262,26 @@ class TestStreamableHTTPTransport:
         assert "Unsupported protocol version" in str(result.content)
         handler.assert_not_called()
 
-    async def test_runner_task_status_handling(
+    async def test_run_handler_task_status_handling(
         self, transport: StreamableHTTPTransport, valid_headers: dict[str, str], valid_body: str
     ):
-        """Test the _runner method's task status handling."""
+        """Test the _run_handler method's task status handling."""
         handler = AsyncMock(return_value='{"result": "success"}')
 
         async with transport:
             # Test the runner directly
-            async def test_runner():
+            async def test_run_handler():
                 async with anyio.create_task_group() as tg:
-                    result = await tg.start(transport._runner, handler, valid_body)
+                    result = await tg.start(transport._run_handler, handler, valid_body)
                     return result
 
-            result = await test_runner()
+            result = await test_run_handler()
 
         assert result == '{"result": "success"}'
         handler.assert_called_once()
 
-    async def test_runner_streaming_task_status(self, transport: StreamableHTTPTransport, valid_body: str):
-        """Test the _runner method with streaming handler."""
+    async def test_run_handler_streaming_task_status(self, transport: StreamableHTTPTransport, valid_body: str):
+        """Test the _run_handler method with streaming handler."""
 
         async def streaming_handler(message: Message, send: Send):
             await send('{"result": "stream"}')
@@ -289,27 +289,27 @@ class TestStreamableHTTPTransport:
 
         async with transport:
 
-            async def test_runner():
+            async def test_run_handler():
                 async with anyio.create_task_group() as tg:
-                    result = await tg.start(transport._runner, streaming_handler, valid_body)
+                    result = await tg.start(transport._run_handler, streaming_handler, valid_body)
                     return result
 
-            result = await test_runner()
+            result = await test_run_handler()
 
         assert isinstance(result, MemoryObjectReceiveStream)
 
-    async def test_runner_exception_handling(self, transport: StreamableHTTPTransport, valid_body: str):
-        """Test the _runner method's exception handling."""
+    async def test_run_handler_exception_handling(self, transport: StreamableHTTPTransport, valid_body: str):
+        """Test the _run_handler method's exception handling."""
         handler = AsyncMock(side_effect=Exception("Test error"))
 
         async with transport:
 
-            async def test_runner():
+            async def test_run_handler():
                 async with anyio.create_task_group() as tg:
-                    result = await tg.start(transport._runner, handler, valid_body)
+                    result = await tg.start(transport._run_handler, handler, valid_body)
                     return result
 
-            result = await test_runner()
+            result = await test_run_handler()
 
         # Should return an error response
         assert isinstance(result, str)

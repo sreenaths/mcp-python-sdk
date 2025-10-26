@@ -61,7 +61,8 @@ async def streamable_http_lifespan(app: Starlette) -> AsyncGenerator[None, None]
     all requests to the Starlette application. The transport is stored in the application
     state and properly cleaned up when the application shuts down.
 
-    This approach is recommended when you want to run message handlers in the background.
+    This approach is recommended when you want to run message handlers in the background until completion.
+    This is especially useful for implementing resumable streamable HTTP.
 
     Args:
         app: The Starlette application instance.
@@ -77,6 +78,35 @@ async def streamable_http_lifespan(app: Starlette) -> AsyncGenerator[None, None]
     async with StreamableHTTPTransport() as transport:
         setattr(app.state, TRANSPORT_STATE_OBJ_KEY, transport)
         yield
+
+
+async def _process_streamable_http_request(
+    transport: StreamableHTTPTransport,
+    close_transport: BackgroundTask | None,
+    handler: StreamableHTTPRequestHandler,
+    request: Request,
+    ping: int = 15,
+) -> Response:
+    msg = await request.body()
+    msg_str = msg.decode("utf-8")
+
+    result = await transport.dispatch(handler, request.method, request.headers, msg_str)
+
+    if isinstance(result.content, MemoryObjectReceiveStream):
+        return EventSourceResponse(
+            content=result.content,
+            ping=ping,
+            headers=result.headers,
+            background=close_transport,
+        )
+
+    return Response(
+        content=result.content,
+        status_code=result.status_code,
+        media_type=result.media_type,
+        headers=result.headers,
+        background=close_transport,
+    )
 
 
 async def streamable_http_transport(
@@ -101,39 +131,33 @@ async def streamable_http_transport(
         handler: The StreamableHTTPRequestHandler that will process the MCP request.
         request: The incoming Starlette Request object.
         ping: The interval in seconds for SSE ping messages to keep connections alive.
-              Defaults to 15 seconds.
+              Defaults to 15 seconds. 15 seconds is a common practice and recommended interval
+              to prevent proxy servers from closing idle connections.
 
     Returns:
         Either an EventSourceResponse (for streaming SSE responses) or a standard
         Starlette Response (for non-streaming responses), including appropriate
         status codes, content, media types, and headers.
     """
-    msg = await request.body()
-    msg_str = msg.decode("utf-8")
+    app_level_transport: StreamableHTTPTransport | None = getattr(request.state, TRANSPORT_STATE_OBJ_KEY, None)
 
-    transport: StreamableHTTPTransport | None = getattr(request.state, TRANSPORT_STATE_OBJ_KEY, None)
-    close_transport = None
-    if transport is None:
+    if app_level_transport:
+        return await _process_streamable_http_request(app_level_transport, None, handler, request, ping)
+    else:
         # No application-level StreamableHTTPTransport found; create a new transport instance for this request.
-        transport = StreamableHTTPTransport()
-        await transport.start()
-        # Use a BackgroundTask to ensure the transport is properly closed after the response is served.
-        close_transport = BackgroundTask(transport.aclose)
+        request_level_transport = StreamableHTTPTransport()
+        await request_level_transport.start()
 
-    result = await transport.dispatch(handler, request.method, request.headers, msg_str)
-
-    if isinstance(result.content, MemoryObjectReceiveStream):
-        return EventSourceResponse(
-            content=result.content,
-            ping=ping,
-            headers=result.headers,
-            background=close_transport,
-        )
-
-    return Response(
-        content=result.content,
-        status_code=result.status_code,
-        media_type=result.media_type,
-        headers=result.headers,
-        background=close_transport,
-    )
+        try:
+            # Use a BackgroundTask to ensure the transport is properly closed after the response is served.
+            close_transport = BackgroundTask(request_level_transport.aclose)
+            return await _process_streamable_http_request(
+                request_level_transport,
+                close_transport,
+                handler,
+                request,
+                ping,
+            )
+        except Exception:
+            await request_level_transport.aclose()
+            raise
