@@ -65,8 +65,8 @@ class MiniMCP(Generic[ScopeT]):
             idle_timeout: Time in seconds after which a message handler will be considered idle and timed out.
             max_concurrency: The maximum number of message handlers that could be run at
                 the same time, beyond which the handle() calls will be blocked.
-            raise_exceptions: Whether to raise uncaught exceptions while handling
-                messages. Useful for development and testing.
+            raise_exceptions: Whether to raise uncaught exceptions while handling messages. Useful for
+                development and testing.
         """
         self._raise_exceptions = raise_exceptions
         self._limiter = Limiter(idle_timeout, max_concurrency)
@@ -144,7 +144,7 @@ class MiniMCP(Generic[ScopeT]):
         except Exception as e:
             logger.exception("Unhandled exception")
             if self._raise_exceptions:
-                raise
+                raise  # Useful for development and testing
             response = json_rpc.build_error_message(types.INTERNAL_ERROR, message_id, e)
         except anyio.get_cancelled_exc_class() as e:
             logger.debug("Task cancelled: %s. Message: %s", e, message)

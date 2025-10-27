@@ -33,8 +33,15 @@ class HTTPTransport(HTTPTransportBase):
         if result := self._validate_request_body(body):
             return result
 
-        response = await handler(body)
-        logger.debug("Handling completed. Response: %s", response)
+        try:
+            response = await handler(body)
+            logger.debug("Handling completed. Response: %s", response)
+        except Exception:
+            # Exceptions reaching this point indicate unhandled errors in the request handler.
+            # When raise_exceptions is True (or handler fails to catch), exceptions bubble up
+            # and terminate the transport.
+            logger.exception("Error while handling request in HTTPTransport")
+            raise
 
         if isinstance(response, NoMessage):
             return HTTPResult(HTTPStatus.ACCEPTED)

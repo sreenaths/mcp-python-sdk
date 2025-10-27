@@ -37,10 +37,17 @@ async def write_msg(response: Message | NoMessage):
 
 async def _handle_message(handler: StdioRequestHandler, line: str):
     logger.debug("Handling incoming message: %s", line)
-    response = await handler(line, write_msg)
-    await write_msg(response)
 
-    # Exceptions propagated from handler should cause a shutdown of the transport.
+    try:
+        response = await handler(line, write_msg)
+        logger.debug("Handling completed. Response: %s", response)
+        await write_msg(response)
+    except Exception:
+        # Exceptions reaching this point indicate unhandled errors in the request handler.
+        # When raise_exceptions is True (or handler fails to catch), exceptions bubble up
+        # and terminate the transport.
+        logger.exception("Error while handling message in stdio transport")
+        raise
 
 
 async def transport(handler: StdioRequestHandler):
