@@ -34,12 +34,12 @@ class HTTPTransport(HTTPTransportBase):
             return result
 
         try:
-            response = await handler(body)
+            response: Message | NoMessage = await handler(body)
             logger.debug("Handling completed. Response: %s", response)
         except Exception:
-            # Exceptions reaching this point indicate unhandled errors in the request handler.
-            # When raise_exceptions is True (or handler fails to catch), exceptions bubble up
-            # and terminate the transport.
+            # Exceptions reaching this point were not handled inside the request handler
+            # (or raise_exceptions=True was set). Such exceptions are not recovered from
+            # and will bubble up, potentially causing the transport to terminate.
             logger.exception("Error while handling request in HTTPTransport")
             raise
 

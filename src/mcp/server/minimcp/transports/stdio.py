@@ -39,13 +39,13 @@ async def _handle_message(handler: StdioRequestHandler, line: str):
     logger.debug("Handling incoming message: %s", line)
 
     try:
-        response = await handler(line, write_msg)
+        response: Message | NoMessage = await handler(line, write_msg)
         logger.debug("Handling completed. Response: %s", response)
         await write_msg(response)
     except Exception:
-        # Exceptions reaching this point indicate unhandled errors in the request handler.
-        # When raise_exceptions is True (or handler fails to catch), exceptions bubble up
-        # and terminate the transport.
+        # Exceptions reaching this point were not handled inside the request handler
+        # (or raise_exceptions=True was set). Such exceptions are not recovered from
+        # and will bubble up, potentially causing the transport to terminate.
         logger.exception("Error while handling message in stdio transport")
         raise
 
