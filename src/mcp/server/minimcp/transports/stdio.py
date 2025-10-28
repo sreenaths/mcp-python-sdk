@@ -82,7 +82,7 @@ async def transport(handler: StdioRequestHandler):
     - The anyio.wrap_file implementation naturally applies backpressure
     - Concurrent message handling via task groups
     - Concurrency management is enforced by MiniMCP
-    - Exceptions propagated from handler will cause transport shutdown
+    - Exceptions propagated from handler will cause transport termination
 
     Args:
         handler: A function that will be called for each incoming message. It will be called
@@ -96,8 +96,15 @@ async def transport(handler: StdioRequestHandler):
         ValueError: If a message contains embedded newlines (spec violation)
     """
 
-    async with anyio.create_task_group() as tg:
-        async for line in _stdin:
-            _line = line.strip()
-            if _line:
-                tg.start_soon(_handle_message, handler, _line)
+    try:
+        logger.debug("Starting stdio transport")
+        async with anyio.create_task_group() as tg:
+            async for line in _stdin:
+                _line = line.strip()
+                if _line:
+                    tg.start_soon(_handle_message, handler, _line)
+    except Exception:
+        logger.exception("Error while running stdio transport. Transport will be terminated.")
+        raise
+    finally:
+        logger.debug("Stdio transport stopped")
