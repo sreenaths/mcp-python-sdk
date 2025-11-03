@@ -11,20 +11,18 @@ from mcp.server.minimcp.types import Message, NoMessage, Send
 
 __all__ = [
     "MiniMCP",
-    # --------------------------------
-    # Types
+    # --- Types -----------------------------
     "Message",
     "NoMessage",
     "Send",
+    # --- Exceptions ------------------------
     "ContextError",
-    # --------------------------------
-    # Orchestration
+    # --- Orchestration ---------------------
     "Context",
     "Limiter",
     "TimeLimiter",
     "Responder",
-    # --------------------------------
-    # Transports
+    # --- Transports ------------------------
     "stdio",
     "starlette",
     "HTTPTransport",
