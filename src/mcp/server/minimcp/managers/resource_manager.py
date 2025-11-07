@@ -11,7 +11,7 @@ from typing_extensions import TypedDict, Unpack
 
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError, ResourceNotFoundError
+from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPRuntimeError, PrimitiveError, ResourceNotFoundError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 from mcp.types import Annotations, AnyFunction, Resource, ResourceTemplate
 
@@ -213,16 +213,16 @@ class ResourceManager:
             The registered Resource or ResourceTemplate object.
 
         Raises:
-            MCPValueError: If a resource with the same name is already registered, if URI is empty,
+            PrimitiveError: If a resource with the same name is already registered, if URI is empty,
                 if URI parameters don't match function parameters, or if the function isn't properly typed.
         """
 
         if not uri:
-            raise MCPValueError("URI is required, pass it as part of the definition.")
+            raise PrimitiveError("URI is required, pass it as part of the definition.")
 
         resource_func = MCPFunc(func, kwargs.get("name"))
         if resource_func.name in self._resources:
-            raise MCPValueError(f"Resource {resource_func.name} already registered")
+            raise PrimitiveError(f"Resource {resource_func.name} already registered")
 
         normalized_uri = self._check_similar_resource(uri)
 
@@ -232,7 +232,7 @@ class ResourceManager:
         if uri_params or func_params:
             # Resource Template
             if uri_params != func_params:
-                raise MCPValueError(
+                raise PrimitiveError(
                     f"Mismatch between URI parameters {uri_params} and function parameters {func_params}"
                 )
 
@@ -287,14 +287,14 @@ class ResourceManager:
             The normalized URI.
 
         Raises:
-            MCPValueError: If a similar resource is already registered.
+            PrimitiveError: If a similar resource is already registered.
         """
 
         normalized_uri = TEMPLATE_PARAM_REGEX.sub("|", uri)
 
         for r in self._resources.values():
             if r.normalized_uri == normalized_uri:
-                raise MCPValueError(f"Resource {uri} already registered under the name {r.resource.name}")
+                raise PrimitiveError(f"Resource {uri} already registered under the name {r.resource.name}")
 
         return normalized_uri
 
@@ -331,10 +331,10 @@ class ResourceManager:
             The removed Resource or ResourceTemplate object.
 
         Raises:
-            ResourceNotFoundError: If the resource is not found.
+            PrimitiveError: If the resource is not found.
         """
         if name not in self._resources:
-            raise ResourceNotFoundError(f"Resource {name} not found", data={"name": name})
+            raise PrimitiveError(f"Unknown resource: {name}")
 
         return self._resources.pop(name).resource
 
@@ -423,9 +423,6 @@ class ResourceManager:
         uri = str(uri)
 
         details, args = self._find_matching_resource(uri)
-        if details is None:
-            raise ResourceNotFoundError("Resource not found", data={"uri": uri})
-
         return await self._read_resource(details, args)
 
     async def _read_resource(
@@ -450,6 +447,8 @@ class ResourceManager:
             logger.debug("Resource %s handled with args %s", details.resource.name, args)
 
             return [ReadResourceContents(content=content, mime_type=details.resource.mimeType)]
+        except InvalidArgumentsError:
+            raise
         except Exception as e:
             msg = f"Error reading resource {details.resource.name}: {e}"
             logger.exception(msg)
@@ -480,7 +479,7 @@ class ResourceManager:
 
         return content
 
-    def _find_matching_resource(self, uri: str) -> tuple[_ResourceDetails | None, dict[str, str] | None]:
+    def _find_matching_resource(self, uri: str) -> tuple[_ResourceDetails, dict[str, str] | None]:
         """Find a resource that matches the given URI.
 
         First attempts an exact match for static resources, then tries pattern matching
@@ -492,6 +491,9 @@ class ResourceManager:
         Returns:
             A tuple of (resource_details, extracted_args). If no match is found,
             returns (None, None). For static resources, args will be None.
+
+        Raises:
+            ResourceNotFoundError: If no matching resource is found.
         """
         # Find exact match
         for r in self._resources.values():
@@ -503,7 +505,7 @@ class ResourceManager:
             if r.uri_pattern and (match := r.uri_pattern.match(uri)):
                 return r, match.groupdict()
 
-        return None, None
+        raise ResourceNotFoundError("Resource not found", data={"uri": uri})
 
 
 def _uri_to_pattern(uri: str) -> re.Pattern[str]:

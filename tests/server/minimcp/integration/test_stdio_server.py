@@ -1,5 +1,5 @@
 """
-Integration tests for MCP server using FastMCP stdio client.
+Integration tests for MCP server using official MCP stdio client.
 """
 
 import os
@@ -12,7 +12,7 @@ import pytest
 from helpers.client_session_with_init import ClientSessionWithInit
 from pydantic import AnyUrl
 
-from mcp import StdioServerParameters, stdio_client
+from mcp import McpError, StdioServerParameters, stdio_client
 from mcp.types import CallToolResult, TextContent, TextResourceContents
 
 pytestmark = pytest.mark.anyio
@@ -180,27 +180,26 @@ class TestStdioServer:
     async def test_invalid_tool_call(self, mcp_client: ClientSessionWithInit):
         """Test calling a non-existent tool."""
 
-        result = await mcp_client.call_tool("nonexistent_tool", {})
-
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        assert "Unknown tool: nonexistent_tool" in result.content[0].text
+        # Unknown tools is a protocol error, so it should raise a McpError
+        # https://modelcontextprotocol.io/specification/2025-06-18/server/tools#error-handling
+        with pytest.raises(McpError):
+            await mcp_client.call_tool("nonexistent_tool", {})
 
     async def test_invalid_resource_read(self, mcp_client: ClientSessionWithInit):
         """Test reading a non-existent resource."""
-        with pytest.raises(Exception):  # fastmcp should raise an exception for invalid resources
+
+        # Resource not found is a protocol error, so it should raise a McpError
+        # https://modelcontextprotocol.io/specification/2025-06-18/server/resources#error-handling
+        with pytest.raises(McpError):
             await mcp_client.read_resource(AnyUrl("math://nonexistent"))
 
     async def test_tool_call_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
         """Test calling a tool with invalid parameters."""
 
-        result = await mcp_client.call_tool("add", {"a": 5.0})  # Missing 'b' parameter
-
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        assert "Field required" in result.content[0].text
+        # Invalid parameters is a protocol error, so it should raise a McpError
+        # https://modelcontextprotocol.io/specification/2025-06-18/server/tools#error-handling
+        with pytest.raises(McpError):
+            await mcp_client.call_tool("add", {"a": 5.0})  # Missing 'b' parameter
 
     async def test_add_with_progress_tool(self, mcp_client: ClientSessionWithInit):
         """Test calling the add_with_progress tool which sends progress notifications."""
@@ -312,14 +311,8 @@ class TestStdioServer:
     async def test_progress_tool_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
         """Test that parameter validation errors are reported correctly for async progress tools."""
         # Pass invalid parameter type that cannot be coerced
-        result = await mcp_client.call_tool("add_with_progress", {"a": "not_a_number", "b": 5.0})
-
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        # Should get validation error before progress reporting starts
-        error_text = result.content[0].text.lower()
-        assert "validation" in error_text or "invalid" in error_text or "error" in error_text
+        with pytest.raises(McpError):
+            await mcp_client.call_tool("add_with_progress", {"a": "not_a_number", "b": 5.0})
 
     async def test_progress_handler_exception_handling(self, mcp_client: ClientSessionWithInit):
         """Test that exceptions in progress handlers don't break tool execution."""
@@ -370,14 +363,8 @@ class TestStdioServer:
     async def test_tool_with_invalid_type_coercion(self, mcp_client: ClientSessionWithInit):
         """Test that MCPFunc properly rejects invalid type coercions."""
         # Pass a string that cannot be coerced to a number
-        result = await mcp_client.call_tool("add", {"a": "not_a_number", "b": 5.0})
-
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        # Error message should indicate validation error
-        error_text = result.content[0].text.lower()
-        assert "validation" in error_text or "invalid" in error_text or "error" in error_text
+        with pytest.raises(McpError):
+            await mcp_client.call_tool("add", {"a": "not_a_number", "b": 5.0})
 
     async def test_tool_with_integer_inputs(self, mcp_client: ClientSessionWithInit):
         """Test that MCPFunc accepts integer inputs for float parameters."""

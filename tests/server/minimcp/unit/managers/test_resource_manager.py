@@ -7,7 +7,7 @@ import pytest
 import mcp.types as types
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import MCPRuntimeError, MCPValueError, ResourceNotFoundError
+from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError, MCPRuntimeError, PrimitiveError, ResourceNotFoundError
 from mcp.server.minimcp.managers.resource_manager import ResourceDefinition, ResourceManager, _uri_to_pattern
 
 pytestmark = pytest.mark.anyio
@@ -156,16 +156,16 @@ class TestResourceManager:
         assert result.uriTemplate == "search/{query}/{page}"
 
     def test_add_resource_empty_uri_raises_error(self, resource_manager: ResourceManager):
-        """Test that adding a resource with empty URI raises MCPValueError."""
+        """Test that adding a resource with empty URI raises PrimitiveError."""
 
         def test_resource() -> str:
             return "content"
 
-        with pytest.raises(MCPValueError, match="URI is required"):
+        with pytest.raises(PrimitiveError, match="URI is required"):
             resource_manager.add(test_resource, "")
 
     def test_add_duplicate_resource_name_raises_error(self, resource_manager: ResourceManager):
-        """Test that adding a resource with duplicate name raises MCPValueError."""
+        """Test that adding a resource with duplicate name raises PrimitiveError."""
 
         def resource1() -> str:
             return "content1"
@@ -177,11 +177,11 @@ class TestResourceManager:
         resource_manager.add(resource1, "file://test1.txt", name="duplicate_name")  # type: ignore
 
         # Adding second resource with same name should raise error
-        with pytest.raises(MCPValueError, match="Resource duplicate_name already registered"):
+        with pytest.raises(PrimitiveError, match="Resource duplicate_name already registered"):
             resource_manager.add(resource2, "file://test2.txt", name="duplicate_name")  # type: ignore
 
     def test_add_duplicate_uri_raises_error(self, resource_manager: ResourceManager):
-        """Test that adding resources with duplicate normalized URI raises MCPValueError."""
+        """Test that adding resources with duplicate normalized URI raises PrimitiveError."""
 
         def resource1() -> str:
             return "content1"
@@ -193,14 +193,14 @@ class TestResourceManager:
         resource_manager.add(resource1, "file://test.txt")
 
         # Adding second resource with same URI should raise error
-        with pytest.raises(MCPValueError, match="Resource file://test.txt already registered"):
+        with pytest.raises(PrimitiveError, match="Resource file://test.txt already registered"):
             resource_manager.add(resource2, "file://test.txt")
 
     def test_add_lambda_without_name_raises_error(self, resource_manager: ResourceManager):
         """Test that lambda functions without custom name are rejected by MCPFunc."""
         lambda_resource: Any = lambda: "content"  # noqa: E731  # type: ignore[misc]
 
-        with pytest.raises(MCPValueError, match="Lambda functions must be named"):
+        with pytest.raises(MCPFuncError, match="Lambda functions must be named"):
             resource_manager.add(lambda_resource, "file://lambda.txt")  # type: ignore[arg-type]
 
     def test_add_lambda_with_custom_name_succeeds(self, resource_manager: ResourceManager):
@@ -217,7 +217,7 @@ class TestResourceManager:
         def resource_with_args(id: str, *args: str) -> str:
             return f"Content {id}"
 
-        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
+        with pytest.raises(MCPFuncError, match="Functions with \\*args are not supported"):
             resource_manager.add(resource_with_args, "items/{id}")
 
     def test_add_function_with_kwargs_raises_error(self, resource_manager: ResourceManager):
@@ -226,7 +226,7 @@ class TestResourceManager:
         def resource_with_kwargs(id: str, **kwargs: Any) -> str:
             return f"Content {id}"
 
-        with pytest.raises(MCPValueError, match="Functions with \\*\\*kwargs are not supported"):
+        with pytest.raises(MCPFuncError, match="Functions with \\*\\*kwargs are not supported"):
             resource_manager.add(resource_with_kwargs, "items/{id}")
 
     def test_add_bound_method_as_resource(self, resource_manager: ResourceManager):
@@ -257,7 +257,7 @@ class TestResourceManager:
         assert "lambda_template" in resource_manager._resources
 
     def test_add_duplicate_template_uri_raises_error(self, resource_manager: ResourceManager):
-        """Test that adding resource templates with duplicate normalized URI raises MCPValueError."""
+        """Test that adding resource templates with duplicate normalized URI raises PrimitiveError."""
 
         def template1(id: str) -> str:
             return f"content1-{id}"
@@ -269,22 +269,22 @@ class TestResourceManager:
         resource_manager.add(template1, "files/{id}")
 
         # Adding second template with same normalized URI should raise error
-        with pytest.raises(MCPValueError, match="Resource files/\\{id\\} already registered"):
+        with pytest.raises(PrimitiveError, match="Resource files/\\{id\\} already registered"):
             resource_manager.add(template2, "files/{id}")
 
     def test_add_template_parameter_mismatch_raises_error(self, resource_manager: ResourceManager):
-        """Test that parameter mismatch between URI and function raises MCPValueError."""
+        """Test that parameter mismatch between URI and function raises PrimitiveError."""
 
         def mismatched_func(user_id: str, extra_param: str) -> str:
             return f"{user_id}-{extra_param}"
 
-        with pytest.raises(MCPValueError, match="Mismatch between URI parameters"):
+        with pytest.raises(PrimitiveError, match="Mismatch between URI parameters"):
             resource_manager.add(mismatched_func, "users/{user_id}")
 
         def another_mismatch(wrong_param: str) -> str:
             return wrong_param
 
-        with pytest.raises(MCPValueError, match="Mismatch between URI parameters"):
+        with pytest.raises(PrimitiveError, match="Mismatch between URI parameters"):
             resource_manager.add(another_mismatch, "users/{user_id}")
 
     def test_remove_existing_resource(self, resource_manager: ResourceManager):
@@ -304,8 +304,8 @@ class TestResourceManager:
         assert "test_resource" not in resource_manager._resources
 
     def test_remove_nonexistent_resource_raises_error(self, resource_manager: ResourceManager):
-        """Test that removing a non-existent resource raises MCPValueError."""
-        with pytest.raises(MCPValueError, match="Resource nonexistent not found"):
+        """Test that removing a non-existent resource raises PrimitiveError."""
+        with pytest.raises(PrimitiveError, match="Unknown resource: nonexistent"):
             resource_manager.remove("nonexistent")
 
     async def test_list_resources_empty(self, resource_manager: ResourceManager):
@@ -472,7 +472,7 @@ class TestResourceManager:
         assert result_list[0].mime_type == "application/json"
 
     async def test_read_nonexistent_resource_raises_error(self, resource_manager: ResourceManager):
-        """Test that reading a non-existent resource raises MCPValueError."""
+        """Test that reading a non-existent resource raises PrimitiveError."""
         with pytest.raises(ResourceNotFoundError, match="Resource not found"):
             await resource_manager.read("file://nonexistent.txt")
 
@@ -505,8 +505,8 @@ class TestResourceManager:
         assert result_list[0].content == "Item 123 in category books"
 
     async def test_read_by_name_nonexistent_raises_error(self, resource_manager: ResourceManager):
-        """Test that reading a non-existent resource by name raises MCPValueError."""
-        with pytest.raises(MCPValueError, match="Resource nonexistent not found"):
+        """Test that reading a non-existent resource by name raises PrimitiveError."""
+        with pytest.raises(ResourceNotFoundError, match="Resource nonexistent not found"):
             await resource_manager.read_by_name("nonexistent")
 
     async def test_read_resource_function_raises_exception(self, resource_manager: ResourceManager):
@@ -539,8 +539,7 @@ class TestResourceManager:
         )
         assert "Item 42: test" in content_str
 
-        # Invalid types should raise error wrapped in MCPRuntimeError
-        with pytest.raises(MCPRuntimeError, match="Error reading resource typed_resource"):
+        with pytest.raises(InvalidArgumentsError, match="Input should be a valid integer"):
             await resource_manager.read("items/not_a_number/test")
 
     async def test_read_bound_method_resource(self, resource_manager: ResourceManager):
@@ -758,7 +757,7 @@ class TestResourceManager:
 
         resource_manager.add(sample_resource, name="sample_resource1", uri="users/{id}")
 
-        with pytest.raises(MCPValueError, match="Resource users/{different_id} already registered"):
+        with pytest.raises(PrimitiveError, match="Resource users/{different_id} already registered"):
             resource_manager.add(sample_resource, "users/{different_id}")
 
     def test_find_matching_resource_exact_match(self, resource_manager: ResourceManager):
@@ -795,9 +794,8 @@ class TestResourceManager:
 
         resource_manager.add(some_resource, "file://test.txt")
 
-        details, args = resource_manager._find_matching_resource("file://nonexistent.txt")
-        assert details is None
-        assert args is None
+        with pytest.raises(ResourceNotFoundError, match="Resource not found"):
+            resource_manager._find_matching_resource("file://nonexistent.txt")
 
     async def test_full_workflow(self, resource_manager: ResourceManager):
         """Test a complete workflow: add, list, read, remove."""

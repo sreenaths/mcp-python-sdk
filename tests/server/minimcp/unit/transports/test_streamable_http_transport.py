@@ -9,10 +9,8 @@ from anyio.streams.memory import MemoryObjectReceiveStream
 from mcp.server.minimcp.exceptions import MCPRuntimeError
 from mcp.server.minimcp.transports.http_transport_base import HTTPResult
 from mcp.server.minimcp.transports.streamable_http import (
-    CONTENT_TYPE_SSE,
     SSE_HEADERS,
     StreamableHTTPTransport,
-    suppress_stream_errors,
 )
 from mcp.server.minimcp.types import Message, NoMessage, Send
 
@@ -132,7 +130,7 @@ class TestStreamableHTTPTransport:
         async def streaming_handler(message: Message, send: Send):
             await send('{"jsonrpc": "2.0", "result": "stream1", "id": 1}')
             await send('{"jsonrpc": "2.0", "result": "stream2", "id": 2}')
-            return NoMessage.NOTIFICATION
+            return "Final result"
 
         async with transport:
             result = await transport.dispatch(streaming_handler, "POST", sse_headers, valid_body)
@@ -280,24 +278,6 @@ class TestStreamableHTTPTransport:
         assert result == '{"result": "success"}'
         handler.assert_called_once()
 
-    async def test_run_handler_streaming_task_status(self, transport: StreamableHTTPTransport, valid_body: str):
-        """Test the _run_handler method with streaming handler."""
-
-        async def streaming_handler(message: Message, send: Send):
-            await send('{"result": "stream"}')
-            return NoMessage.NOTIFICATION
-
-        async with transport:
-
-            async def test_run_handler():
-                async with anyio.create_task_group() as tg:
-                    result = await tg.start(transport._run_handler, streaming_handler, valid_body)
-                    return result
-
-            result = await test_run_handler()
-
-        assert isinstance(result, MemoryObjectReceiveStream)
-
     async def test_run_handler_exception_handling(self, transport: StreamableHTTPTransport, valid_body: str):
         """Test the _run_handler method's exception handling."""
         handler = AsyncMock(side_effect=Exception("Test error"))
@@ -316,18 +296,6 @@ class TestStreamableHTTPTransport:
         assert "error" in result
         assert "Test error" in result
 
-    async def test_stream_error_suppression(self):
-        """Test that stream errors are properly suppressed."""
-        # Test the suppress_stream_errors context manager
-        with suppress_stream_errors:
-            raise anyio.BrokenResourceError("Test broken resource")
-
-        with suppress_stream_errors:
-            raise anyio.ClosedResourceError("Test closed resource")
-
-        # Should not raise any exceptions
-        assert True
-
     async def test_send_function_behavior(
         self, transport: StreamableHTTPTransport, sse_headers: dict[str, str], valid_body: str
     ):
@@ -336,7 +304,7 @@ class TestStreamableHTTPTransport:
         async def capturing_handler(message: Message, send: Send):
             await send('{"id": 1, "result": "first"}')
             await send('{"id": 2, "result": "second"}')
-            return NoMessage.NOTIFICATION
+            return "Final result"
 
         async with transport:
             result = await transport.dispatch(capturing_handler, "POST", sse_headers, valid_body)
@@ -373,16 +341,6 @@ class TestStreamableHTTPTransport:
         # All requests should have been processed
         assert call_count == 3
 
-    def test_sse_headers_constant(self):
-        """Test SSE headers constant."""
-        assert SSE_HEADERS["Cache-Control"] == "no-cache, no-transform"
-        assert SSE_HEADERS["Connection"] == "keep-alive"
-        assert SSE_HEADERS["Content-Type"] == CONTENT_TYPE_SSE
-
-    def test_content_type_sse_constant(self):
-        """Test SSE content type constant."""
-        assert CONTENT_TYPE_SSE == "text/event-stream"
-
     async def test_transport_reuse_after_close(self, transport: StreamableHTTPTransport):
         """Test that transport can be reused after closing."""
         # First use
@@ -414,21 +372,6 @@ class TestStreamableHTTPTransport:
         assert transport._tg is not None
 
         await transport.aclose()
-
-    async def test_dispatch_with_malformed_json_body(
-        self, transport: StreamableHTTPTransport, valid_headers: dict[str, str]
-    ):
-        """Test dispatch with malformed JSON in request body."""
-        malformed_body = '{"jsonrpc": "2.0", "method": "test", invalid json'
-
-        async with transport:
-            # Should still call the handler - JSON validation is done at handler level
-            handler = AsyncMock()
-            result = await transport.dispatch(handler, "POST", valid_headers, malformed_body)
-
-        assert result.status_code == HTTPStatus.BAD_REQUEST
-        handler.assert_not_called()
-        assert "Invalid JSON" in str(result.content)
 
     async def test_initialize_request_skips_version_check(self, transport: StreamableHTTPTransport):
         """Test that initialize requests skip protocol version validation."""

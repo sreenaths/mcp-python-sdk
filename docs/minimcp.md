@@ -165,7 +165,7 @@ MiniMCP controls how many handlers can run at the same time and how long each ha
 
 ```python
 # Instantiation
-mcp = MiniMCP[ScopeT](name, [version, instructions, idle_timeout, max_concurrency, raise_exceptions])
+mcp = MiniMCP[ScopeT](name, [version, instructions, idle_timeout, max_concurrency])
 
 # Managers
 mcp.tool
@@ -277,6 +277,11 @@ await starlette.streamable_http_transport(mcp.handle, request)
 ```
 
 For more details on supported transports, please check the [specification compliance](../docs/minimcp-transport-specification-compliance.md) document.
+
+
+## Error Handling
+
+
 
 ## Examples
 

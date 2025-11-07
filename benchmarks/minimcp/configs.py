@@ -16,9 +16,13 @@ REPORTS_DIR = "benchmarks/minimcp/reports"
 
 # --- Load Configuration ---
 
-LOADS = [
+_LOADS = [
     Load(name="sequential_load", concurrency=1, iterations=30, rounds=40),
     Load(name="light_load", concurrency=20, iterations=30, rounds=40),
     Load(name="medium_load", concurrency=100, iterations=15, rounds=40),
     Load(name="heavy_load", concurrency=300, iterations=15, rounds=40),
+]
+
+LOADS = [
+    Load(name="sequential_load", concurrency=1, iterations=1, rounds=40),
 ]

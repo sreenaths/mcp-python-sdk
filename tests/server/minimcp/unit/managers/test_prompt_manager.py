@@ -6,7 +6,7 @@ import pytest
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import InvalidParamsError, MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError, MCPRuntimeError, PrimitiveError
 from mcp.server.minimcp.managers.prompt_manager import PromptDefinition, PromptManager
 
 pytestmark = pytest.mark.anyio
@@ -190,7 +190,7 @@ class TestPromptManager:
         assert metadata_arg.required is False
 
     def test_add_duplicate_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that adding a prompt with duplicate name raises MCPValueError."""
+        """Test that adding a prompt with duplicate name raises PrimitiveError."""
 
         def prompt1(x: str) -> str:
             return x
@@ -202,11 +202,11 @@ class TestPromptManager:
         prompt_manager.add(prompt1, name="duplicate_name")
 
         # Adding second prompt with same name should raise error
-        with pytest.raises(MCPValueError, match="Prompt duplicate_name already registered"):
+        with pytest.raises(PrimitiveError, match="Prompt duplicate_name already registered"):
             prompt_manager.add(prompt2, name="duplicate_name")
 
     def test_add_again_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that adding a prompt again raises MCPValueError."""
+        """Test that adding a prompt again raises PrimitiveError."""
 
         def prompt1(x: str) -> str:
             return x
@@ -215,14 +215,14 @@ class TestPromptManager:
         prompt_manager.add(prompt1)
 
         # Adding prompt again should raise error
-        with pytest.raises(MCPValueError, match="Prompt prompt1 already registered"):
+        with pytest.raises(PrimitiveError, match="Prompt prompt1 already registered"):
             prompt_manager.add(prompt1)
 
     def test_add_lambda_without_name_raises_error(self, prompt_manager: PromptManager):
         """Test that lambda functions without custom name are rejected by MCPFunc."""
         lambda_prompt: Any = lambda x: f"Prompt: {x}"  # noqa: E731  # type: ignore[misc]
 
-        with pytest.raises(MCPValueError, match="Lambda functions must be named"):
+        with pytest.raises(MCPFuncError, match="Lambda functions must be named"):
             prompt_manager.add(lambda_prompt)  # type: ignore[arg-type]
 
     def test_add_lambda_with_custom_name_succeeds(self, prompt_manager: PromptManager):
@@ -239,7 +239,7 @@ class TestPromptManager:
         def prompt_with_args(topic: str, *args: str) -> str:
             return f"Topic: {topic}"
 
-        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
+        with pytest.raises(MCPFuncError, match="Functions with \\*args are not supported"):
             prompt_manager.add(prompt_with_args)
 
     def test_add_function_with_kwargs_raises_error(self, prompt_manager: PromptManager):
@@ -248,7 +248,7 @@ class TestPromptManager:
         def prompt_with_kwargs(topic: str, **kwargs: Any) -> str:
             return f"Topic: {topic}"
 
-        with pytest.raises(MCPValueError, match="Functions with \\*\\*kwargs are not supported"):
+        with pytest.raises(MCPFuncError, match="Functions with \\*\\*kwargs are not supported"):
             prompt_manager.add(prompt_with_kwargs)
 
     def test_add_bound_method_as_prompt(self, prompt_manager: PromptManager):
@@ -299,8 +299,8 @@ class TestPromptManager:
         assert "test_prompt" not in prompt_manager._prompts
 
     def test_remove_nonexistent_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that removing a non-existent prompt raises InvalidParamsError."""
-        with pytest.raises(InvalidParamsError, match="Prompt nonexistent not found"):
+        """Test that removing a non-existent prompt raises PrimitiveError."""
+        with pytest.raises(PrimitiveError, match="Unknown prompt: nonexistent"):
             prompt_manager.remove("nonexistent")
 
     async def test_list_prompts_empty(self, prompt_manager: PromptManager):
@@ -388,12 +388,12 @@ class TestPromptManager:
         assert result.messages[0].content.text == "Write a long casual piece about AI"
 
     async def test_get_nonexistent_prompt_raises_error(self, prompt_manager: PromptManager):
-        """Test that getting a non-existent prompt raises InvalidParamsError."""
-        with pytest.raises(InvalidParamsError, match="Prompt nonexistent not found"):
+        """Test that getting a non-existent prompt raises PrimitiveError."""
+        with pytest.raises(PrimitiveError, match="Unknown prompt: nonexistent"):
             await prompt_manager.get("nonexistent", {})
 
     async def test_get_prompt_missing_required_arguments(self, prompt_manager: PromptManager):
-        """Test that getting a prompt with missing required arguments raises MCPValueError."""
+        """Test that getting a prompt with missing required arguments raises PrimitiveError."""
 
         def strict_prompt(required_param: str, optional_param: str = "default") -> str:
             """A prompt with required parameters."""
@@ -401,10 +401,10 @@ class TestPromptManager:
 
         prompt_manager.add(strict_prompt)
 
-        with pytest.raises(InvalidParamsError, match="Missing required arguments"):
+        with pytest.raises(InvalidArgumentsError, match="Missing required arguments"):
             await prompt_manager.get("strict_prompt", {})
 
-        with pytest.raises(InvalidParamsError, match="Missing required arguments"):
+        with pytest.raises(InvalidArgumentsError, match="Missing required arguments"):
             await prompt_manager.get("strict_prompt", {"optional_param": "value"})
 
     async def test_get_prompt_with_type_validation(self, prompt_manager: PromptManager):
@@ -426,8 +426,7 @@ class TestPromptManager:
         assert isinstance(result2.messages[0].content, types.TextContent)
         assert result2.messages[0].content.text == "Message 10: world"
 
-        # Invalid types should raise error wrapped in MCPRuntimeError
-        with pytest.raises(MCPRuntimeError, match="Error getting prompt typed_prompt"):
+        with pytest.raises(InvalidArgumentsError, match="Input should be a valid integer"):
             await prompt_manager.get("typed_prompt", {"count": "not_a_number", "message": "hello"})
 
     async def test_get_prompt_with_no_parameters(self, prompt_manager: PromptManager):
@@ -637,7 +636,7 @@ class TestPromptManager:
         assert len(prompts) == 0
 
         # Getting removed prompt should fail
-        with pytest.raises(InvalidParamsError, match="Prompt story_prompt not found"):
+        with pytest.raises(PrimitiveError, match="Unknown prompt: story_prompt"):
             await prompt_manager.get("story_prompt", {"genre": "mystery", "character": "detective"})
 
     def test_convert_result_edge_cases(self, prompt_manager: PromptManager):

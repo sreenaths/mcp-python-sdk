@@ -6,7 +6,6 @@ import mcp.types as types
 from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.limiter import TimeLimiter
 from mcp.server.minimcp.types import Message, Send
-from mcp.server.minimcp.utils.model import to_json
 
 logger = logging.getLogger(__name__)
 
@@ -107,10 +106,10 @@ class Responder:
                 include progress notifications, log messages, and resource updates etc.
         """
         logger.debug("Sending notification: %s", notification)
-        rpc_msg = json_rpc.build_notification_message(notification)
+        message = json_rpc.build_notification_message(notification)
 
         # Reset time limiter
         self._time_limiter.reset()
 
         # Just call the sender with the message and let transport layer handle the rest.
-        await self._send(to_json(rpc_msg))
+        await self._send(message)

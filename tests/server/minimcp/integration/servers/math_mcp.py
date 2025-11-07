@@ -14,6 +14,7 @@ math_mcp = MiniMCP[Any](
     name="TestMathServer",
     version="0.1.0",
     instructions="A simple MCP server for mathematical operations used in integration tests.",
+    include_stack_trace=True,
 )
 
 

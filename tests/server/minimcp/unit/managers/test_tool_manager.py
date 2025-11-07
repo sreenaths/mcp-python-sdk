@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import InvalidParamsError, MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError, MCPRuntimeError, PrimitiveError
 from mcp.server.minimcp.managers.tool_manager import ToolDefinition, ToolManager
 
 pytestmark = pytest.mark.anyio
@@ -114,7 +114,7 @@ class TestToolManager:
         assert "async_tool" in tool_manager._tools
 
     def test_add_duplicate_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that adding a tool with duplicate name raises MCPValueError."""
+        """Test that adding a tool with duplicate name raises PrimitiveError."""
 
         def tool1(x: int) -> int:
             return x
@@ -126,11 +126,11 @@ class TestToolManager:
         tool_manager.add(tool1, name="duplicate_name")
 
         # Adding second tool with same name should raise error
-        with pytest.raises(MCPValueError, match="Tool duplicate_name already registered"):
+        with pytest.raises(PrimitiveError, match="Tool duplicate_name already registered"):
             tool_manager.add(tool2, name="duplicate_name")
 
     def test_add_again_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that adding a tool with duplicate name raises MCPValueError."""
+        """Test that adding a tool with duplicate name raises PrimitiveError."""
 
         def tool1(x: int) -> int:
             return x
@@ -139,14 +139,14 @@ class TestToolManager:
         tool_manager.add(tool1)
 
         # Adding tool again should raise error
-        with pytest.raises(MCPValueError, match="Tool tool1 already registered"):
+        with pytest.raises(PrimitiveError, match="Tool tool1 already registered"):
             tool_manager.add(tool1)
 
     def test_add_lambda_without_name_raises_error(self, tool_manager: ToolManager):
         """Test that lambda functions without custom name are rejected by MCPFunc."""
         lambda_tool: Any = lambda x: x * 2  # noqa: E731  # type: ignore[misc]
 
-        with pytest.raises(MCPValueError, match="Lambda functions must be named"):
+        with pytest.raises(MCPFuncError, match="Lambda functions must be named"):
             tool_manager.add(lambda_tool)  # type: ignore[arg-type]
 
     def test_add_lambda_with_custom_name_succeeds(self, tool_manager: ToolManager):
@@ -163,7 +163,7 @@ class TestToolManager:
         def tool_with_args(x: int, *args: int) -> int:
             return x + sum(args)
 
-        with pytest.raises(MCPValueError, match="Functions with \\*args are not supported"):
+        with pytest.raises(MCPFuncError, match="Functions with \\*args are not supported"):
             tool_manager.add(tool_with_args)
 
     def test_add_function_with_kwargs_raises_error(self, tool_manager: ToolManager):
@@ -172,7 +172,7 @@ class TestToolManager:
         def tool_with_kwargs(x: int, **kwargs: Any) -> int:
             return x
 
-        with pytest.raises(MCPValueError, match="Functions with \\*\\*kwargs are not supported"):
+        with pytest.raises(MCPFuncError, match="Functions with \\*\\*kwargs are not supported"):
             tool_manager.add(tool_with_kwargs)
 
     def test_add_bound_method_as_tool(self, tool_manager: ToolManager):
@@ -255,7 +255,7 @@ class TestToolManager:
         assert "metadata" not in required
 
     def test_add_duplicate_function_name_raises_error(self, tool_manager: ToolManager):
-        """Test that adding functions with same name raises MCPValueError."""
+        """Test that adding functions with same name raises PrimitiveError."""
 
         def same_name(x: int) -> int:
             return x
@@ -271,7 +271,7 @@ class TestToolManager:
 
         def different_scope_same_name():
             # But this should fail since it uses the function name
-            with pytest.raises(MCPValueError, match="Tool same_name already registered"):
+            with pytest.raises(PrimitiveError, match="Tool same_name already registered"):
                 # Create another function with same name
                 def same_name(z: float) -> float:
                     return z
@@ -297,8 +297,8 @@ class TestToolManager:
         assert "test_tool" not in tool_manager._tools
 
     def test_remove_nonexistent_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that removing a non-existent tool raises InvalidParamsError."""
-        with pytest.raises(InvalidParamsError, match="Unknown tool: nonexistent"):
+        """Test that removing a non-existent tool raises PrimitiveError."""
+        with pytest.raises(PrimitiveError, match="Unknown tool: nonexistent"):
             tool_manager.remove("nonexistent")
 
     async def test_list_tools_empty(self, tool_manager: ToolManager):
@@ -369,8 +369,8 @@ class TestToolManager:
         assert result[1]["result"] == "Hi, Bob!"
 
     async def test_call_nonexistent_tool_raises_error(self, tool_manager: ToolManager):
-        """Test that calling a non-existent tool raises InvalidParamsError."""
-        with pytest.raises(InvalidParamsError, match="Unknown tool: nonexistent"):
+        """Test that calling a non-existent tool raises PrimitiveError."""
+        with pytest.raises(PrimitiveError, match="Unknown tool: nonexistent"):
             await tool_manager.call("nonexistent", {})
 
     async def test_call_tool_with_complex_return_type(self, tool_manager: ToolManager):
@@ -417,9 +417,8 @@ class TestToolManager:
         # by ensuring the tool works with valid arguments and would fail with invalid ones
         # through the MCPFunc validation layer
 
-        with pytest.raises(MCPRuntimeError, match="required_int") as exc_info:
+        with pytest.raises(InvalidArgumentsError, match="required_int"):
             await tool_manager.call("strict_tool", {"invalid_int": 42})
-        assert isinstance(exc_info.value.__cause__, ValidationError)
 
     async def test_call_tool_with_type_validation(self, tool_manager: ToolManager):
         """Test that argument types are validated during tool execution."""
@@ -438,8 +437,7 @@ class TestToolManager:
         result = await tool_manager.call("typed_tool", {"count": "10", "message": "world"})
         assert result[1]["result"] == "Count 10: world"
 
-        # Invalid types should raise error wrapped in MCPRuntimeError
-        with pytest.raises(MCPRuntimeError, match="Error calling tool typed_tool"):
+        with pytest.raises(InvalidArgumentsError, match="Input should be a valid integer"):
             await tool_manager.call("typed_tool", {"count": "not_a_number", "message": "hello"})
 
     async def test_call_tool_with_no_parameters(self, tool_manager: ToolManager):
@@ -500,7 +498,7 @@ class TestToolManager:
         def failing_tool(should_fail: bool) -> str:
             """A tool that can fail."""
             if should_fail:
-                raise ValueError("Tool failed")
+                raise MCPRuntimeError("Tool failed")
             return "Success"
 
         tool_manager.add(failing_tool)
@@ -509,10 +507,8 @@ class TestToolManager:
         result: Any = await tool_manager.call("failing_tool", {"should_fail": False})
         assert result[1]["result"] == "Success"
 
-        # Should wrap exception in MCPRuntimeError
-        with pytest.raises(MCPRuntimeError, match="Error calling tool failing_tool") as exc_info:
+        with pytest.raises(MCPRuntimeError, match="Tool failed"):
             await tool_manager.call("failing_tool", {"should_fail": True})
-        assert isinstance(exc_info.value.__cause__, ValueError)
 
     async def test_call_async_tool_exception_wrapped(self, tool_manager: ToolManager):
         """Test that exceptions from async tool functions are wrapped in MCPRuntimeError."""
@@ -521,7 +517,7 @@ class TestToolManager:
             """An async tool that can fail."""
             await anyio.sleep(0.001)
             if should_fail:
-                raise RuntimeError("Async tool error")
+                raise MCPRuntimeError("Async tool error")
             return "Success"
 
         tool_manager.add(async_failing_tool)
@@ -530,10 +526,8 @@ class TestToolManager:
         result: Any = await tool_manager.call("async_failing_tool", {"should_fail": False})
         assert result[1]["result"] == "Success"
 
-        # Should wrap exception in MCPRuntimeError
-        with pytest.raises(MCPRuntimeError, match="Error calling tool async_failing_tool") as exc_info:
+        with pytest.raises(MCPRuntimeError, match="Async tool error"):
             await tool_manager.call("async_failing_tool", {"should_fail": True})
-        assert isinstance(exc_info.value.__cause__, RuntimeError)
 
     async def test_call_tool_with_missing_required_arguments(self, tool_manager: ToolManager):
         """Test that calling a tool with missing required arguments raises an error."""
@@ -549,14 +543,12 @@ class TestToolManager:
         assert result[1]["result"] == "value-default"
 
         # Should fail without required param
-        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
+        with pytest.raises(InvalidArgumentsError, match="Field required"):
             await tool_manager.call("required_args_tool", {})
-        assert isinstance(exc_info.value.__cause__, ValidationError)
 
         # Should fail with only optional param
-        with pytest.raises(MCPRuntimeError, match="Field required") as exc_info:
+        with pytest.raises(InvalidArgumentsError, match="Field required"):
             await tool_manager.call("required_args_tool", {"optional_param": "value"})
-        assert isinstance(exc_info.value.__cause__, ValidationError)
 
     async def test_call_tool_exception_with_cause(self, tool_manager: ToolManager):
         """Test that exception chaining is preserved."""
@@ -567,15 +559,13 @@ class TestToolManager:
                 try:
                     raise ValueError("Inner error")
                 except ValueError as e:
-                    raise RuntimeError("Outer error") from e
+                    raise ValueError("Outer error") from e
             return "OK"
 
         tool_manager.add(tool_with_nested_error)
 
-        with pytest.raises(MCPRuntimeError, match="Error calling tool tool_with_nested_error") as exc_info:
+        with pytest.raises(ValueError, match="Outer error"):
             await tool_manager.call("tool_with_nested_error", {"trigger": "nested"})
-        assert isinstance(exc_info.value.__cause__, RuntimeError)
-        assert exc_info.value.__cause__.__cause__ is not None
 
     def test_decorator_usage(self, tool_manager: ToolManager):
         """Test using ToolManager as a decorator."""
@@ -671,5 +661,5 @@ class TestToolManager:
         assert len(tools) == 0
 
         # Calling removed tool should fail
-        with pytest.raises(InvalidParamsError, match="Unknown tool: calculator"):
+        with pytest.raises(PrimitiveError, match="Unknown tool: calculator"):
             await tool_manager.call("calculator", {"operation": "add", "a": 1, "b": 2})

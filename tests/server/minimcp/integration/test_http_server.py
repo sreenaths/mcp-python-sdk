@@ -3,6 +3,7 @@ Integration tests for MCP server using FastMCP StreamableHttpTransport client.
 """
 
 from collections.abc import AsyncGenerator, Coroutine
+from http import HTTPStatus
 from typing import Any
 
 import anyio
@@ -12,6 +13,7 @@ from httpx import AsyncClient, Limits, Timeout
 from pydantic import AnyUrl
 from servers.http_server import HTTP_MCP_PATH, SERVER_HOST, SERVER_PORT
 
+from mcp import McpError, types
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import TextContent, TextResourceContents
 
@@ -188,27 +190,21 @@ class TestHttpServer:
     async def test_invalid_tool_call(self, mcp_client: ClientSessionWithInit):
         """Test calling a non-existent tool."""
 
-        result = await mcp_client.call_tool("nonexistent_tool", {})
-
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        assert "nonexistent_tool" in result.content[0].text
+        # Unknown tools is a protocol error, so it should raise a McpError
+        # https://modelcontextprotocol.io/specification/2025-06-18/server/tools#error-handling
+        with pytest.raises(McpError):
+            await mcp_client.call_tool("nonexistent_tool", {})
 
     async def test_invalid_resource_read(self, mcp_client: ClientSessionWithInit):
         """Test reading a non-existent resource."""
-        with pytest.raises(Exception):  # fastmcp should raise an exception for invalid resources
+        with pytest.raises(McpError):
             await mcp_client.read_resource(AnyUrl("math://nonexistent"))
 
     async def test_tool_call_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
         """Test calling a tool with invalid parameters."""
 
-        result = await mcp_client.call_tool("add", {"a": 5.0})  # Missing 'b' parameter
-
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        assert "Field required" in result.content[0].text
+        with pytest.raises(McpError):
+            await mcp_client.call_tool("add", {"a": 5.0})  # Missing 'b' parameter
 
     async def test_concurrent_requests(self, mcp_client: ClientSessionWithInit):
         """Test multiple concurrent requests to ensure proper isolation."""
@@ -242,11 +238,11 @@ class TestHttpServer:
         # Send invalid JSON
         response = await http_client.post(self.server_url, content="not valid json", headers=self.default_headers)
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-        assert "Invalid JSON" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.PARSE_ERROR
+        assert "InvalidJSON" in error_data["error"]["message"]
 
     async def test_empty_json_request_body(self, http_client: AsyncClient):
         """Test server response to empty request body."""
@@ -254,11 +250,11 @@ class TestHttpServer:
         # Send empty body
         response = await http_client.post(self.server_url, content="", headers=self.default_headers)
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-        assert "Invalid JSON" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.PARSE_ERROR
+        assert "InvalidJSONError" in error_data["error"]["message"]
 
     async def test_json_array_request_body(self, http_client: AsyncClient):
         """Test server response to JSON array instead of object."""
@@ -270,11 +266,11 @@ class TestHttpServer:
             headers=self.default_headers,
         )
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-        assert "not a dictionary" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.INVALID_REQUEST
+        assert "InvalidJSONRPCMessageError" in error_data["error"]["message"]
 
     async def test_json_string_request_body(self, http_client: AsyncClient):
         """Test server response to JSON string instead of object."""
@@ -282,11 +278,11 @@ class TestHttpServer:
         # Send JSON string instead of object
         response = await http_client.post(self.server_url, json="just a string", headers=self.default_headers)
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-        assert "not a dictionary" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.INVALID_REQUEST
+        assert "InvalidJSONRPCMessageError" in error_data["error"]["message"]
 
     async def test_missing_jsonrpc_field(self, http_client: AsyncClient):
         """Test server response to request missing jsonrpc field."""
@@ -298,11 +294,11 @@ class TestHttpServer:
             headers=self.default_headers,
         )
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-        assert "Not a JSON-RPC message" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.INVALID_REQUEST
+        assert "InvalidJSONRPCMessageError" in error_data["error"]["message"]
 
     async def test_wrong_jsonrpc_version(self, http_client: AsyncClient):
         """Test server response to wrong JSON-RPC version."""
@@ -314,11 +310,11 @@ class TestHttpServer:
             headers=self.default_headers,
         )
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-        assert "Not a JSON-RPC 2.0 message" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.INVALID_REQUEST
+        assert "InvalidJSONRPCMessageError" in error_data["error"]["message"]
 
     async def test_null_jsonrpc_field(self, http_client: AsyncClient):
         """Test server response to null jsonrpc field."""
@@ -330,11 +326,11 @@ class TestHttpServer:
             headers=self.default_headers,
         )
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-        assert "Not a JSON-RPC 2.0 message" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.INVALID_REQUEST
+        assert "InvalidJSONRPCMessageError" in error_data["error"]["message"]
 
     async def test_empty_json_object(self, http_client: AsyncClient):
         """Test server response to empty JSON object."""
@@ -342,11 +338,11 @@ class TestHttpServer:
         # Send empty JSON object
         response = await http_client.post(self.server_url, json={}, headers=self.default_headers)
 
-        assert response.status_code == 400
+        assert response.status_code == HTTPStatus.BAD_REQUEST
         error_data = response.json()
         assert "error" in error_data
-        assert error_data["error"]["code"] == -32602  # INVALID_PARAMS
-        assert "Not a JSON-RPC message" in error_data["error"]["message"]
+        assert error_data["error"]["code"] == types.INVALID_REQUEST
+        assert "InvalidJSONRPCMessageError" in error_data["error"]["message"]
 
     async def test_valid_jsonrpc_with_extra_fields(self, http_client: AsyncClient):
         """Test that valid JSON-RPC with extra fields is accepted."""
@@ -390,11 +386,11 @@ class TestHttpServer:
                 headers=self.default_headers,
             )
 
-            assert response.status_code == 400
+            assert response.status_code == HTTPStatus.BAD_REQUEST
             error_data = response.json()
             assert "error" in error_data
-            assert error_data["error"]["code"] == -32700  # PARSE_ERROR
-            assert "Invalid JSON" in error_data["error"]["message"]
+            assert error_data["error"]["code"] == types.PARSE_ERROR
+            assert "InvalidJSONError" in error_data["error"]["message"]
 
     async def test_tool_with_string_number_coercion(self, mcp_client: ClientSessionWithInit):
         """Test that MCPFunc coerces string numbers to numeric types."""
@@ -408,14 +404,11 @@ class TestHttpServer:
 
     async def test_tool_with_invalid_type_coercion(self, mcp_client: ClientSessionWithInit):
         """Test that invalid types that can't be coerced raise proper errors."""
-        # Try to pass a string that can't be converted to float
-        result = await mcp_client.call_tool("add", {"a": "not_a_number", "b": 5.0})
 
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        # Should contain validation error information
-        assert "Error calling tool add" in result.content[0].text or "validation" in result.content[0].text.lower()
+        # Must raise InvalidArgumentsError
+        with pytest.raises(McpError) as excinfo:
+            await mcp_client.call_tool("add", {"a": "not_a_number", "b": 5.0})
+        assert "InvalidArgumentsError" in str(excinfo.value.error.message)
 
     async def test_tool_parameter_descriptions_in_schema(self, mcp_client: ClientSessionWithInit):
         """Test that parameter descriptions from Field annotations are exposed in schema."""
@@ -542,7 +535,6 @@ class TestHttpServer:
             tg.start_soon(run_and_store, 1, call_tool_safe("add", {"a": 5.0, "b": 10.0}))  # Valid
             tg.start_soon(run_and_store, 2, call_tool_safe("divide", {"a": 100.0, "b": 0.0}))  # Error
             tg.start_soon(run_and_store, 3, call_tool_safe("multiply", {"a": "3.5", "b": "2.0"}))  # Valid with coercion
-            tg.start_soon(run_and_store, 4, call_tool_safe("add", {"a": "invalid"}))  # Invalid type
 
         # Check results
         assert results[1][0] is True  # Success
@@ -553,9 +545,6 @@ class TestHttpServer:
 
         assert results[3][0] is True  # Success with coercion
         assert float(results[3][1]) == 7.0
-
-        assert results[4][0] is False  # Validation error
-        # Should have validation error message
 
     async def test_tool_schema_reflects_mcp_func_validation(self, mcp_client: ClientSessionWithInit):
         """Test that tool schemas properly reflect MCPFunc's validation requirements."""

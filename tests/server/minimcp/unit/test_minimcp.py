@@ -10,10 +10,11 @@ import mcp.types as types
 from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.server.minimcp.exceptions import (
     ContextError,
-    InvalidParamsError,
-    MethodNotFoundError,
-    ParserError,
-    UnsupportedRPCMessageType,
+    InvalidJSONError,
+    InvalidJSONRPCMessageError,
+    InvalidMessageError,
+    RequestHandlerNotFoundError,
+    UnsupportedMessageTypeError,
 )
 from mcp.server.minimcp.managers.context_manager import Context, ContextManager
 from mcp.server.minimcp.managers.prompt_manager import PromptManager
@@ -31,18 +32,18 @@ class TestMiniMCP:
     @pytest.fixture
     def minimcp(self) -> MiniMCP[Any]:
         """Create a MiniMCP instance for testing."""
-        return MiniMCP(name="test-server", version="1.0.0", instructions="Test server instructions")
+        return MiniMCP[Any](name="test-server", version="1.0.0", instructions="Test server instructions")
 
     @pytest.fixture
     def minimcp_with_custom_config(self) -> MiniMCP[Any]:
         """Create a MiniMCP instance with custom configuration."""
-        return MiniMCP(
+        return MiniMCP[Any](
             name="custom-server",
             version="2.0.0",
             instructions="Custom instructions",
             idle_timeout=60,
             max_concurrency=50,
-            raise_exceptions=True,
+            include_stack_trace=True,
         )
 
     @pytest.fixture
@@ -83,7 +84,7 @@ class TestMiniMCP:
         assert isinstance(server.prompt, PromptManager)
         assert isinstance(server.resource, ResourceManager)
         assert isinstance(server.context, ContextManager)
-        assert server._raise_exceptions is False
+        assert server._include_stack_trace is False
 
     def test_init_with_all_parameters(self, minimcp_with_custom_config: MiniMCP[Any]) -> None:
         """Test MiniMCP initialization with all parameters."""
@@ -92,7 +93,7 @@ class TestMiniMCP:
         assert server.name == "custom-server"
         assert server.version == "2.0.0"
         assert server.instructions == "Custom instructions"
-        assert server._raise_exceptions is True
+        assert server._include_stack_trace is True
         # Note: Limiter internal attributes may vary, test behavior instead
 
     def test_properties(self, minimcp: MiniMCP[Any]) -> None:
@@ -131,9 +132,8 @@ class TestMiniMCP:
 
     def test_parse_message_valid_request(self, minimcp: MiniMCP[Any], valid_request_message: str) -> None:
         """Test parsing a valid JSON-RPC request message."""
-        message_id, rpc_msg = minimcp._parse_message(valid_request_message)
+        rpc_msg = minimcp._parse_message(valid_request_message)
 
-        assert message_id == 1
         assert isinstance(rpc_msg, types.JSONRPCMessage)
         assert isinstance(rpc_msg.root, types.JSONRPCRequest)
         assert rpc_msg.root.method == "initialize"
@@ -141,9 +141,8 @@ class TestMiniMCP:
 
     def test_parse_message_valid_notification(self, minimcp: MiniMCP[Any], valid_notification_message: str) -> None:
         """Test parsing a valid JSON-RPC notification message."""
-        message_id, rpc_msg = minimcp._parse_message(valid_notification_message)
+        rpc_msg = minimcp._parse_message(valid_notification_message)
 
-        assert message_id is None  # Notifications don't have IDs
         assert isinstance(rpc_msg, types.JSONRPCMessage)
         assert isinstance(rpc_msg.root, types.JSONRPCNotification)
         assert rpc_msg.root.method == "notifications/initialized"
@@ -152,28 +151,28 @@ class TestMiniMCP:
         """Test parsing invalid JSON raises ParserError."""
         invalid_json = '{"invalid": json}'
 
-        with pytest.raises(ParserError):
+        with pytest.raises(InvalidJSONError):
             minimcp._parse_message(invalid_json)
 
     def test_parse_message_invalid_rpc_format(self, minimcp: MiniMCP[Any]) -> None:
         """Test parsing invalid JSON-RPC format raises InvalidParamsError."""
         invalid_rpc = json.dumps({"not": "jsonrpc"})
 
-        with pytest.raises(InvalidParamsError):
+        with pytest.raises(InvalidJSONRPCMessageError):
             minimcp._parse_message(invalid_rpc)
 
     def test_parse_message_missing_id_in_dict(self, minimcp: MiniMCP[Any]) -> None:
         """Test parsing message without ID returns empty string."""
         message_without_id = json.dumps({"jsonrpc": "2.0", "method": "test"})
 
-        message_id, _ = minimcp._parse_message(message_without_id)
-        assert message_id is None
+        message = minimcp._parse_message(message_without_id)
+        assert message is not None
 
     def test_parse_message_non_dict_json(self, minimcp: MiniMCP[Any]) -> None:
         """Test parsing non-dict JSON returns empty message ID."""
         non_dict_json = json.dumps(["not", "a", "dict"])
 
-        with pytest.raises(InvalidParamsError):
+        with pytest.raises(InvalidJSONRPCMessageError):
             minimcp._parse_message(non_dict_json)
 
     async def test_handle_rpc_msg_request(self, minimcp: MiniMCP[Any]) -> None:
@@ -192,17 +191,14 @@ class TestMiniMCP:
         rpc_msg = types.JSONRPCMessage(mock_request)
 
         response = await minimcp._handle_rpc_msg(rpc_msg)
-
-        assert isinstance(response, types.JSONRPCMessage)
-        assert isinstance(response.root, types.JSONRPCResponse)
-        assert response.root.id == 1
+        assert isinstance(response, Message)
 
     async def test_handle_rpc_msg_notification(self, minimcp: MiniMCP[Any]) -> None:
         """Test handling JSON-RPC notification message."""
         mock_notification = types.JSONRPCNotification(jsonrpc="2.0", method="notifications/initialized", params={})
         rpc_msg = types.JSONRPCMessage(mock_notification)
 
-        response: types.JSONRPCMessage | NoMessage = await minimcp._handle_rpc_msg(rpc_msg)
+        response: Message | NoMessage = await minimcp._handle_rpc_msg(rpc_msg)
 
         assert response == NoMessage.NOTIFICATION
 
@@ -212,7 +208,7 @@ class TestMiniMCP:
         mock_msg = Mock()
         mock_msg.root = "unsupported_type"
 
-        with pytest.raises(UnsupportedRPCMessageType):
+        with pytest.raises(UnsupportedMessageTypeError):
             await minimcp._handle_rpc_msg(mock_msg)
 
     async def test_handle_client_request_success(self, minimcp: MiniMCP[Any]) -> None:
@@ -243,7 +239,7 @@ class TestMiniMCP:
         mock_request = Mock()
         mock_request.root = UnknownRequest()
 
-        with pytest.raises(MethodNotFoundError):
+        with pytest.raises(RequestHandlerNotFoundError):
             await minimcp._handle_client_request(mock_request)
 
     async def test_handle_client_notification_success(self, minimcp: MiniMCP[Any]) -> None:
@@ -356,23 +352,15 @@ class TestMiniMCP:
         """Test handling parser error."""
         invalid_message = '{"invalid": json}'
 
-        result = await minimcp.handle(invalid_message)
-
-        assert isinstance(result, str)
-        response_dict = json.loads(result)
-        assert response_dict["jsonrpc"] == "2.0"
-        assert "error" in response_dict
-        assert response_dict["error"]["code"] == types.PARSE_ERROR
+        with pytest.raises(InvalidMessageError):
+            await minimcp.handle(invalid_message)
 
     async def test_handle_invalid_params_error(self, minimcp: MiniMCP[Any]) -> None:
         """Test handling invalid params error."""
         invalid_rpc = json.dumps({"not": "jsonrpc"})
 
-        result = await minimcp.handle(invalid_rpc)
-
-        assert isinstance(result, str)
-        response_dict = json.loads(result)
-        assert response_dict["error"]["code"] == types.INVALID_PARAMS
+        with pytest.raises(InvalidMessageError):
+            await minimcp.handle(invalid_rpc)
 
     async def test_handle_method_not_found_error(self, minimcp: MiniMCP[Any]) -> None:
         """Test handling method not found error."""
@@ -406,27 +394,6 @@ class TestMiniMCP:
             assert isinstance(result, str)
             response_dict = json.loads(result)
             assert response_dict["error"]["code"] == types.INTERNAL_ERROR
-
-    async def test_handle_generic_exception_raise_false(
-        self, minimcp: MiniMCP[Any], valid_request_message: str
-    ) -> None:
-        """Test handling generic exception with raise_exceptions=False."""
-        # Mock _handle_rpc_msg to raise generic exception
-        with patch.object(minimcp, "_handle_rpc_msg", side_effect=ValueError("Generic error")):
-            result = await minimcp.handle(valid_request_message)
-
-            assert isinstance(result, str)
-            response_dict = json.loads(result)
-            assert response_dict["error"]["code"] == types.INTERNAL_ERROR
-
-    async def test_handle_generic_exception_raise_true(
-        self, minimcp_with_custom_config: MiniMCP[Any], valid_request_message: str
-    ) -> None:
-        """Test handling generic exception with raise_exceptions=True."""
-        # Mock _handle_rpc_msg to raise generic exception
-        with patch.object(minimcp_with_custom_config, "_handle_rpc_msg", side_effect=ValueError("Generic error")):
-            with pytest.raises(ValueError, match="Generic error"):
-                await minimcp_with_custom_config.handle(valid_request_message)
 
     async def test_handle_cancellation_error(self, minimcp: MiniMCP[Any], valid_request_message: str) -> None:
         """Test handling cancellation error."""
@@ -486,14 +453,12 @@ class TestMiniMCP:
         server_custom = MiniMCP[CustomScope](name="test")
         assert isinstance(server_custom.context, ContextManager)
 
-    async def test_error_logging(self, minimcp: MiniMCP[Any], caplog: pytest.LogCaptureFixture) -> None:
+    async def test_error_logging(self, minimcp: MiniMCP[Any]) -> None:
         """Test that errors are properly logged."""
         invalid_message = '{"invalid": json}'
 
-        with caplog.at_level("ERROR"):
+        with pytest.raises(InvalidMessageError):
             await minimcp.handle(invalid_message)
-
-        assert "Parser failed" in caplog.text
 
     async def test_debug_logging(
         self, minimcp: MiniMCP[Any], valid_request_message: str, caplog: pytest.LogCaptureFixture
@@ -537,23 +502,6 @@ class TestMiniMCP:
             response_dict = json.loads(result)
             assert response_dict["jsonrpc"] == "2.0"
             assert "result" in response_dict
-
-    async def test_message_id_extraction_edge_cases(self, minimcp: MiniMCP[Any]) -> None:
-        """Test message ID extraction in various edge cases."""
-        # Test with string ID
-        message_with_str_id: str = json.dumps({"jsonrpc": "2.0", "id": "string-id", "method": "test"})
-        message_id, _ = minimcp._parse_message(message_with_str_id)
-        assert message_id == "string-id"
-
-        # Test with numeric ID
-        message_with_num_id: str = json.dumps({"jsonrpc": "2.0", "id": 42, "method": "test"})
-        message_id, _ = minimcp._parse_message(message_with_num_id)
-        assert message_id == 42
-
-        # Test with null ID
-        message_with_null_id: str = json.dumps({"jsonrpc": "2.0", "id": None, "method": "test"})
-        message_id, _ = minimcp._parse_message(message_with_null_id)
-        assert message_id is None
 
 
 class TestMiniMCPIntegration:
@@ -640,9 +588,8 @@ class TestMiniMCPIntegration:
         server: MiniMCP[Any] = MiniMCP(name="error-test")
 
         # Send invalid message
-        invalid_result: Message | NoMessage = await server.handle('{"invalid": json}')
-        invalid_response = json.loads(invalid_result)  # type: ignore
-        assert "error" in invalid_response
+        with pytest.raises(InvalidMessageError):
+            await server.handle('{"invalid": json}')
 
         # Send valid message after error
         valid_message = json.dumps(

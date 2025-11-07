@@ -11,10 +11,9 @@ from anyio.streams.memory import MemoryObjectReceiveStream
 
 import mcp.types as types
 from mcp.server.minimcp import json_rpc
-from mcp.server.minimcp.exceptions import MCPRuntimeError
+from mcp.server.minimcp.exceptions import InvalidMessageError, MCPRuntimeError
 from mcp.server.minimcp.transports.http_transport_base import CONTENT_TYPE_JSON, HTTPResult, HTTPTransportBase
 from mcp.server.minimcp.types import Message, NoMessage, Send
-from mcp.server.minimcp.utils.model import to_json
 from mcp.server.minimcp.utils.task_status_wrapper import TaskStatusWrapper
 
 logger = logging.getLogger(__name__)
@@ -90,25 +89,25 @@ class StreamableHTTPTransport(HTTPTransportBase):
         try:
             async with send_stream:
                 response = await handler(body, send)
-
-                if task_status_wrapper.set(response):
-                    # recv_stream will not be used, close it to free resources
-                    with suppress_stream_errors:
-                        await recv_stream.aclose()
-                elif not isinstance(response, NoMessage):
-                    # Stream was set as status, send the response to the stream
-                    with suppress_stream_errors:
-                        await send_stream.send(response)
-
+        except InvalidMessageError:
+            raise
         except Exception as e:
-            logger.exception("Exception while handling request in StreamableHTTPTransport, generating error response")
-            # Generate a proper JSON-RPC error response
-            error_json = to_json(json_rpc.build_error_message(types.INTERNAL_ERROR, "", e))
+            response, error_message = json_rpc.build_error_message(
+                e,
+                body,
+                types.INTERNAL_ERROR,
+                include_stack_trace=True,
+            )
+            logger.exception(f"Unexpected error in Streamable HTTP transport: {error_message}")
 
-            if not task_status_wrapper.set(error_json):
-                # Try to send error through the stream if it exists and is still open
-                with suppress_stream_errors:
-                    await send_stream.send(error_json)
+        if task_status_wrapper.set(response):
+            # recv_stream will not be used, close it to free resources
+            with suppress_stream_errors:
+                await recv_stream.aclose()
+        elif not isinstance(response, NoMessage):
+            # Stream was set as status, send the response to the stream
+            with suppress_stream_errors:
+                await send_stream.send(response)
 
         # Exception Handling Strategy:
         # 1. Setup exceptions (stream creation, context manager): Propagate to caller (before try/except)
@@ -127,8 +126,6 @@ class StreamableHTTPTransport(HTTPTransportBase):
             return result
         if result := self._validate_protocol_version(headers, body):
             return result
-        if result := self._validate_request_body(body):
-            return result
 
         if self._tg is None:
             raise MCPRuntimeError("StreamableHTTPTransport was not started")
@@ -136,8 +133,19 @@ class StreamableHTTPTransport(HTTPTransportBase):
         # Start the _run_handler in a separate task and await for readiness. Runner manages the handler execution
         # and sends the response back to the transport. Once ready the _run_handler returns a MemoryObjectReceiveStream,
         # Message or NoMessage and continue running in the background until the handler finishes executing.
-        response = await self._tg.start(self._run_handler, handler, body)
-        logger.debug("Handling completed. Response: %s", response)
+        try:
+            response = await self._tg.start(self._run_handler, handler, body)
+            logger.debug("Handling completed. Response: %s", response)
+        except InvalidMessageError as e:
+            return HTTPResult(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
+        except Exception as e:
+            response, error_message = json_rpc.build_error_message(
+                e,
+                body,
+                types.INTERNAL_ERROR,
+                include_stack_trace=True,
+            )
+            logger.exception(f"Unexpected error in Streamable HTTP transport: {error_message}")
 
         if isinstance(response, MemoryObjectReceiveStream):
             _response = cast(MemoryObjectReceiveStream[Message], response)

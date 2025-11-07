@@ -8,7 +8,7 @@ import pydantic_core
 from typing_extensions import TypedDict, Unpack
 
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import InvalidParamsError, MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPRuntimeError, PrimitiveError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 from mcp.types import AnyFunction, GetPromptResult, Prompt, PromptArgument, PromptMessage, TextContent
 
@@ -143,13 +143,13 @@ class PromptManager:
             and inferred arguments.
 
         Raises:
-            MCPValueError: If a prompt with the same name is already registered or if the function
+            PrimitiveError: If a prompt with the same name is already registered or if the function
                 isn't properly typed.
         """
 
         prompt_func = MCPFunc(func, kwargs.get("name"))
         if prompt_func.name in self._prompts:
-            raise MCPValueError(f"Prompt {prompt_func.name} already registered")
+            raise PrimitiveError(f"Prompt {prompt_func.name} already registered")
 
         prompt = Prompt(
             name=prompt_func.name,
@@ -205,11 +205,11 @@ class PromptManager:
             The removed Prompt object.
 
         Raises:
-            InvalidParamsError: If the prompt is not found.
+            PrimitiveError: If the prompt is not found.
         """
         if name not in self._prompts:
-            # Raising InvalidParamsError as per MCP specification
-            raise InvalidParamsError(f"Prompt {name} not found")
+            # Raise INVALID_PARAMS as per MCP specification
+            raise PrimitiveError(f"Unknown prompt: {name}")
 
         return self._prompts.pop(name)[0]
 
@@ -252,13 +252,13 @@ class PromptManager:
             - _meta: Optional metadata
 
         Raises:
-            InvalidParamsError: If the prompt is not found (maps to -32602 Invalid params per spec).
+            PrimitiveError: If the prompt is not found (maps to -32602 Invalid params per spec).
             MCPRuntimeError: If an error occurs during prompt execution or message conversion
                 (maps to -32603 Internal error per spec).
         """
         if name not in self._prompts:
-            # Raising InvalidParamsError as per MCP specification
-            raise InvalidParamsError(f"Prompt {name} not found")
+            # Raise INVALID_PARAMS as per MCP specification
+            raise PrimitiveError(f"Unknown prompt: {name}")
 
         prompt, prompt_func = self._prompts[name]
         self._validate_args(prompt.arguments, args)
@@ -273,6 +273,8 @@ class PromptManager:
                 messages=messages,
                 _meta=prompt.meta,
             )
+        except InvalidArgumentsError:
+            raise
         except Exception as e:
             msg = f"Error getting prompt {name}: {e}"
             logger.exception(msg)
@@ -288,7 +290,7 @@ class PromptManager:
             available_args: The arguments provided by the client.
 
         Raises:
-            InvalidParamsError: If the required arguments are not provided.
+            InvalidArgumentsError: If the required arguments are not provided.
         """
         if prompt_arguments is None:
             return
@@ -299,7 +301,7 @@ class PromptManager:
         missing_arg_names = required_arg_names - provided_arg_names
         if missing_arg_names:
             missing_arg_names_str = ", ".join(missing_arg_names)
-            raise InvalidParamsError(
+            raise InvalidArgumentsError(
                 f"Missing required arguments: Arguments {missing_arg_names_str} need to be provided"
             )
 

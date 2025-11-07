@@ -2,8 +2,10 @@ import functools
 import inspect
 from typing import Any
 
+from pydantic import ValidationError
+
 from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata, func_metadata
-from mcp.server.minimcp.exceptions import MCPValueError
+from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError
 from mcp.types import AnyFunction
 
 
@@ -76,23 +78,23 @@ class MCPFunc:
         """
 
         if isinstance(func, classmethod):
-            raise MCPValueError("Function cannot be a classmethod")
+            raise MCPFuncError("Function cannot be a classmethod")
 
         if isinstance(func, staticmethod):
-            raise MCPValueError("Function cannot be a staticmethod")
+            raise MCPFuncError("Function cannot be a staticmethod")
 
         if getattr(func, "__isabstractmethod__", False):
-            raise MCPValueError("Function cannot be an abstract method")
+            raise MCPFuncError("Function cannot be an abstract method")
 
         if not inspect.isroutine(func):
-            raise MCPValueError("Value passed is not a function or method")
+            raise MCPFuncError("Object passed is not a function or method")
 
         sig = inspect.signature(func)
         for param in sig.parameters.values():
             if param.kind == inspect.Parameter.VAR_POSITIONAL:
-                raise MCPValueError("Functions with *args are not supported")
+                raise MCPFuncError("Functions with *args are not supported")
             if param.kind == inspect.Parameter.VAR_KEYWORD:
-                raise MCPValueError("Functions with **kwargs are not supported")
+                raise MCPFuncError("Functions with **kwargs are not supported")
 
     def _get_name(self, name: str | None) -> str:
         """
@@ -102,7 +104,7 @@ class MCPFunc:
             name: The custom name to use for the function.
 
         Raises:
-            MCPValueError: If the name cannot be inferred from the function and no custom name is provided.
+            MCPFuncError: If the name cannot be inferred from the function and no custom name is provided.
         """
 
         if name:
@@ -112,9 +114,9 @@ class MCPFunc:
             name = str(getattr(self.func, "__name__", None))
 
             if not name:
-                raise MCPValueError("Name cannot be inferred from the function. Please provide a custom name.")
+                raise MCPFuncError("Name cannot be inferred from the function. Please provide a custom name.")
             elif name == "<lambda>":
-                raise MCPValueError("Lambda functions must be named. Please provide a custom name.")
+                raise MCPFuncError("Lambda functions must be named. Please provide a custom name.")
 
         return name
 
@@ -130,9 +132,20 @@ class MCPFunc:
             The result of the function execution.
 
         Raises:
-            ValidationError: If the arguments are not valid.
+            InvalidArgumentsError: If the arguments are not valid.
         """
-        return await self.meta.call_fn_with_arg_validation(self.func, self.is_async, args or {}, None)
+
+        try:
+            arguments_pre_parsed = self.meta.pre_parse_json(args or {})
+            arguments_parsed_model = self.meta.arg_model.model_validate(arguments_pre_parsed)
+            arguments_parsed_dict = arguments_parsed_model.model_dump_one_level()
+        except ValidationError as e:
+            raise InvalidArgumentsError(f"Invalid arguments: {e}") from e
+
+        if self.is_async:
+            return await self.func(**arguments_parsed_dict)
+        else:
+            return self.func(**arguments_parsed_dict)
 
     def _is_async_callable(self, obj: AnyFunction) -> bool:
         """

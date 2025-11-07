@@ -4,7 +4,11 @@ from collections.abc import Awaitable, Callable
 from io import TextIOWrapper
 
 import anyio
+import anyio.lowlevel
 
+from mcp import types
+from mcp.server.minimcp import json_rpc
+from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.types import Message, NoMessage, Send
 
 logger = logging.getLogger(__name__)
@@ -38,16 +42,23 @@ async def write_msg(response: Message | NoMessage):
 async def _handle_message(handler: StdioRequestHandler, line: str):
     logger.debug("Handling incoming message: %s", line)
 
+    response: Message | NoMessage = NoMessage.NONE
+
     try:
-        response: Message | NoMessage = await handler(line, write_msg)
+        response = await handler(line, write_msg)
         logger.debug("Handling completed. Response: %s", response)
-        await write_msg(response)
-    except Exception:
-        # Exceptions reaching this point were not handled inside the request handler
-        # (or raise_exceptions=True was set). Such exceptions are not recovered from
-        # and will bubble up, potentially causing the transport to terminate.
-        logger.exception("Error while handling message in stdio transport")
-        raise
+    except InvalidMessageError as e:
+        response = e.response
+    except Exception as e:
+        response, error_message = json_rpc.build_error_message(
+            e,
+            line,
+            types.INTERNAL_ERROR,
+            include_stack_trace=True,
+        )
+        logger.exception(f"Unexpected error in stdio transport: {error_message}")
+
+    await write_msg(response)
 
 
 async def transport(handler: StdioRequestHandler):
@@ -103,8 +114,9 @@ async def transport(handler: StdioRequestHandler):
                 _line = line.strip()
                 if _line:
                     tg.start_soon(_handle_message, handler, _line)
-    except Exception:
-        logger.exception("Error while running stdio transport. Transport will be terminated.")
-        raise
+    except anyio.ClosedResourceError:
+        # Stdin was closed (e.g., during shutdown)
+        # Use checkpoint to allow cancellation to be processed
+        await anyio.lowlevel.checkpoint()
     finally:
         logger.debug("Stdio transport stopped")

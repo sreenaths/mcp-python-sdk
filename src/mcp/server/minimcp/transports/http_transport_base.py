@@ -1,17 +1,13 @@
-import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
-from json.decoder import JSONDecodeError
-from typing import Any, cast
 
 from anyio.streams.memory import MemoryObjectReceiveStream
 
 import mcp.types as types
 from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.types import Message, NoMessage
-from mcp.server.minimcp.utils.model import to_json
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 
@@ -140,14 +136,10 @@ class HTTPTransportBase:
         See Also:
             https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#protocol-version-header
         """
-        try:
-            request_obj = json.loads(body)
-            if isinstance(request_obj, dict) and cast(dict[str, Any], request_obj).get("method") == "initialize":
-                # Ignore protocol version validation for initialize request
-                return None
-        except JSONDecodeError:
-            logger.debug("JSONDecodeError: Ignoring for the handler to return correct error response.")
-            pass
+
+        if json_rpc.is_initialize_request(body):
+            # Ignore protocol version validation for initialize request
+            return None
 
         # If no protocol version provided, assume default version as per the specification
         # https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#protocol-version-header
@@ -161,45 +153,6 @@ class HTTPTransportBase:
                 types.INVALID_REQUEST,
                 f"Bad Request: Unsupported protocol version: {protocol_version}. "
                 + f"Supported versions: {supported_versions}",
-            )
-
-        return None
-
-    def _validate_request_body(self, body: str) -> HTTPResult | None:
-        """
-        Validate that the request body contains valid JSON-RPC 2.0 content.
-
-        Performs multiple validation checks:
-        1. The body must be valid JSON
-        2. The JSON must be a dictionary/object
-        3. The "jsonrpc" field must be present
-        4. The "jsonrpc" field must have the value "2.0"
-
-        Args:
-            body: The raw request body string to validate.
-
-        Returns:
-            HTTPResult with 400 BAD_REQUEST status if validation fails, or None
-            if the body is valid JSON-RPC 2.0.
-        """
-        try:
-            request_obj = json.loads(body)
-        except JSONDecodeError:
-            return self._build_error_result(HTTPStatus.BAD_REQUEST, types.PARSE_ERROR, "Bad Request: Invalid JSON")
-
-        if not isinstance(request_obj, dict):
-            return self._build_error_result(
-                HTTPStatus.BAD_REQUEST, types.PARSE_ERROR, "Bad Request: Invalid JSON - not a dictionary"
-            )
-
-        if "jsonrpc" not in request_obj:
-            return self._build_error_result(
-                HTTPStatus.BAD_REQUEST, types.INVALID_PARAMS, "Bad Request: Invalid JSON - Not a JSON-RPC message"
-            )
-
-        if request_obj["jsonrpc"] != json_rpc.JSON_RPC_VERSION:
-            return self._build_error_result(
-                HTTPStatus.BAD_REQUEST, types.INVALID_PARAMS, "Bad Request: Invalid JSON - Not a JSON-RPC 2.0 message"
             )
 
         return None
@@ -221,7 +174,7 @@ class HTTPTransportBase:
             HTTPResult containing the error response with application/json content type.
         """
         err = ValueError(err_msg)
-        content = to_json(json_rpc.build_error_message(err_code, "", err))
+        content, _ = json_rpc.build_error_message(err, "", err_code, include_stack_trace=True)
 
         logger.debug("Building error result with HTTP status code %s and error message %s", status_code, err_msg)
         return HTTPResult(status_code, content, CONTENT_TYPE_JSON)

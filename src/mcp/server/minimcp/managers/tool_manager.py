@@ -8,7 +8,14 @@ from typing_extensions import TypedDict, Unpack
 
 import mcp.types as types
 from mcp.server.lowlevel.server import CombinationContent, Server
-from mcp.server.minimcp.exceptions import InvalidParamsError, MCPRuntimeError, MCPValueError
+from mcp.server.minimcp.exceptions import (
+    InvalidArgumentsError,
+    MCPRuntimeError,
+    PrimitiveError,
+    ToolInvalidArgumentsError,
+    ToolMCPRuntimeError,
+    ToolPrimitiveError,
+)
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
 
 logger = logging.getLogger(__name__)
@@ -92,7 +99,7 @@ class ToolManager:
 
         # Validation done by func_meta in call. Hence passing validate_input=False
         # TODO: Ensure only one validation is required
-        core.call_tool(validate_input=False)(self.call)
+        core.call_tool(validate_input=False)(self._call)
 
     def __call__(self, **kwargs: Unpack[ToolDefinition]) -> Callable[[Callable[[Any], Any]], types.Tool]:
         """Decorator to add/register a tool handler at the time of handler function definition.
@@ -150,13 +157,13 @@ class ToolManager:
             and optional annotations.
 
         Raises:
-            MCPValueError: If a tool with the same name is already registered or if the function
-                isn't properly typed.
+            PrimitiveError: If a tool with the same name is already registered
+            MCPFuncError: If the function cannot be used as a MCP handler function
         """
 
         tool_func = MCPFunc(func, kwargs.get("name"))
         if tool_func.name in self._tools:
-            raise MCPValueError(f"Tool {tool_func.name} already registered")
+            raise PrimitiveError(f"Tool {tool_func.name} already registered")
 
         tool = types.Tool(
             name=tool_func.name,
@@ -183,11 +190,11 @@ class ToolManager:
             The removed Tool object.
 
         Raises:
-            InvalidParamsError: If the tool is not found.
+            PrimitiveError: If the tool is not found.
         """
         if name not in self._tools:
-            # Raising InvalidParamsError as per MCP specification
-            raise InvalidParamsError(f"Unknown tool: {name}")
+            # Raise INVALID_PARAMS as per MCP specification
+            raise PrimitiveError(f"Unknown tool: {name}")
 
         logger.debug("Removing tool %s", name)
         return self._tools.pop(name)[0]
@@ -208,6 +215,27 @@ class ToolManager:
         """
         return [tool[0] for tool in self._tools.values()]
 
+    async def _call(self, name: str, args: dict[str, Any]) -> CombinationContent:
+        if name not in self._tools:
+            # Raise INVALID_PARAMS as per MCP specification
+            raise ToolPrimitiveError(f"Unknown tool: {name}")
+
+        tool_func = self._tools[name][1]
+
+        try:
+            # Exceptions on execution are captured by the core and returned as part of CallToolResult.
+            result = await tool_func.execute(args)
+            logger.debug("Tool %s handled with args %s", name, args)
+        except InvalidArgumentsError as e:
+            raise ToolInvalidArgumentsError(str(e)) from e
+
+        try:
+            return tool_func.meta.convert_result(result)
+        except Exception as e:
+            msg = f"Error calling tool {name}: {e}"
+            logger.exception(msg)
+            raise ToolMCPRuntimeError(msg) from e
+
     async def call(self, name: str, args: dict[str, Any]) -> CombinationContent:
         """Execute a tool by name, as specified in the MCP tools/call protocol.
 
@@ -216,7 +244,7 @@ class ToolManager:
         result is converted to the appropriate tool result format per the MCP specification.
 
         Tools use two error reporting mechanisms per the spec:
-        1. Protocol Errors: MCPValueError for unknown tools, MCPRuntimeError for internal errors
+        1. Protocol Errors: PrimitiveError for unknown tools, MCPRuntimeError for internal errors
         2. Tool Execution Errors: Returned in result with isError=true (handled by lowlevel server)
 
         The result can contain:
@@ -234,24 +262,18 @@ class ToolManager:
             per the MCP protocol.
 
         Raises:
-            InvalidParamsError: If the tool is not found (maps to -32602 Invalid params per spec).
+            PrimitiveError: If the tool is not found (maps to -32602 Invalid params per spec).
+            InvalidArgumentsError: If the tool arguments are invalid.
             MCPRuntimeError: If an error occurs during tool execution (maps to -32603 Internal error).
                 Note: Tool execution errors (API failures, invalid input data, business logic errors)
                 are handled by the lowlevel server and returned with isError=true.
         """
 
-        if name not in self._tools:
-            # Raising InvalidParamsError as per MCP specification
-            raise InvalidParamsError(f"Unknown tool: {name}")
-
         try:
-            tool_func = self._tools[name][1]
-
-            result = await tool_func.execute(args)
-            logger.debug("Tool %s handled with args %s", name, args)
-
-            return tool_func.meta.convert_result(result)
-        except Exception as e:
-            msg = f"Error calling tool {name}: {e}"
-            logger.exception(msg)
-            raise MCPRuntimeError(msg) from e
+            return await self._call(name, args)
+        except ToolPrimitiveError as e:
+            raise PrimitiveError(str(e)) from e
+        except ToolInvalidArgumentsError as e:
+            raise InvalidArgumentsError(str(e)) from e
+        except ToolMCPRuntimeError as e:
+            raise MCPRuntimeError(str(e)) from e

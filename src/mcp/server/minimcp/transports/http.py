@@ -2,6 +2,9 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from http import HTTPStatus
 
+from mcp import types
+from mcp.server.minimcp import json_rpc
+from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.transports.http_transport_base import CONTENT_TYPE_JSON, HTTPResult, HTTPTransportBase
 from mcp.server.minimcp.types import Message, NoMessage
 
@@ -30,18 +33,22 @@ class HTTPTransport(HTTPTransportBase):
             return result
         if result := self._validate_protocol_version(headers, body):
             return result
-        if result := self._validate_request_body(body):
-            return result
+
+        response: Message | NoMessage = NoMessage.NONE
 
         try:
-            response: Message | NoMessage = await handler(body)
+            response = await handler(body)
             logger.debug("Handling completed. Response: %s", response)
-        except Exception:
-            # Exceptions reaching this point were not handled inside the request handler
-            # (or raise_exceptions=True was set). Such exceptions are not recovered from
-            # and will bubble up, potentially causing the transport to terminate.
-            logger.exception("Error while handling request in HTTPTransport")
-            raise
+        except InvalidMessageError as e:
+            return HTTPResult(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
+        except Exception as e:
+            response, error_message = json_rpc.build_error_message(
+                e,
+                body,
+                types.INTERNAL_ERROR,
+                include_stack_trace=True,
+            )
+            logger.exception(f"Unexpected error in HTTP transport: {error_message}")
 
         if isinstance(response, NoMessage):
             return HTTPResult(HTTPStatus.ACCEPTED)

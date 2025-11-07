@@ -149,6 +149,7 @@ class JSONRPCResponse(BaseModel):
 # SDK error codes
 CONNECTION_CLOSED = -32000
 # REQUEST_TIMEOUT = -32001  # the typescript sdk uses this
+RESOURCE_NOT_FOUND = -32002  # Used when a resource is not found as per the MCP specification.
 
 # Standard JSON-RPC error codes
 PARSE_ERROR = -32700
@@ -156,8 +157,6 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 INTERNAL_ERROR = -32603
-
-RESOURCE_NOT_FOUND = -32002  # Used when a resource is not found as per the MCP specification.
 
 
 class ErrorData(BaseModel):
