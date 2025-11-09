@@ -36,14 +36,13 @@ class HTTPTransport(HTTPTransportBase):
 
         try:
             response = await handler(body)
-            logger.debug("Handling completed. Response: %s", response)
 
             if isinstance(response, NoMessage):
-                return HTTPResult(HTTPStatus.ACCEPTED)
-
-            return HTTPResult(HTTPStatus.OK, response, CONTENT_TYPE_JSON)
+                result = HTTPResult(HTTPStatus.ACCEPTED)
+            else:
+                result = HTTPResult(HTTPStatus.OK, response, CONTENT_TYPE_JSON)
         except InvalidMessageError as e:
-            return HTTPResult(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
+            result = HTTPResult(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
         except Exception as e:
             # Handler shouldn't raise any exceptions other than InvalidMessageError, so ideally we should not get here
             response, error_message = json_rpc.build_error_message(
@@ -53,4 +52,6 @@ class HTTPTransport(HTTPTransportBase):
                 include_stack_trace=True,
             )
             logger.exception(f"Unexpected error in HTTP transport: {error_message}")
-            return HTTPResult(HTTPStatus.BAD_REQUEST, response, CONTENT_TYPE_JSON)
+            result = HTTPResult(HTTPStatus.BAD_REQUEST, response, CONTENT_TYPE_JSON)
+
+        return result

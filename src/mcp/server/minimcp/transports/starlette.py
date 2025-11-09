@@ -147,10 +147,10 @@ async def streamable_http_transport(
         # No application-level StreamableHTTPTransport found, create a new transport instance for this request.
         request_level_transport = StreamableHTTPTransport()
 
-        # Cannot use `async with` context manager here because the transport must remain open after the
-        # response is returned. For streamable HTTP streams, the response object is returned immediately,
-        # but messages continue streaming in the background. Therefore, we start the transport manually
-        # and schedule cleanup separately with a BackgroundTask.
+        # Cannot use context manager (async with transport) here because the transport must remain open after the
+        # response is returned. For streamable HTTP streams, the response object is returned immediately, but
+        # messages continue streaming in the background. Therefore, we start the transport manually and schedule
+        # cleanup separately with a BackgroundTask.
         await request_level_transport.start()
         close_transport = BackgroundTask(request_level_transport.aclose)
 

@@ -177,7 +177,7 @@ class TestStreamableHTTPTransport:
             result = await transport.dispatch(handler, "POST", valid_headers, valid_body)
 
         # Should return an error response
-        assert result.status_code == HTTPStatus.OK
+        assert result.status_code == HTTPStatus.BAD_REQUEST
         assert result.content is not None
         assert "error" in str(result.content)
         handler.assert_called_once()
@@ -265,36 +265,31 @@ class TestStreamableHTTPTransport:
     ):
         """Test the _run_handler method's task status handling."""
         handler = AsyncMock(return_value='{"result": "success"}')
+        result: HTTPResult | None = None
 
         async with transport:
-            # Test the runner directly
-            async def test_run_handler():
-                async with anyio.create_task_group() as tg:
-                    result = await tg.start(transport._run_handler, handler, valid_body)
-                    return result
+            async with anyio.create_task_group() as tg:
+                result = await tg.start(transport._run_handler, handler, valid_body)
 
-            result = await test_run_handler()
+        assert result is not None
+        assert result.status_code == HTTPStatus.OK
+        assert result.content == '{"result": "success"}'
+        assert result.media_type == "application/json"
 
-        assert result == '{"result": "success"}'
         handler.assert_called_once()
 
     async def test_run_handler_exception_handling(self, transport: StreamableHTTPTransport, valid_body: str):
         """Test the _run_handler method's exception handling."""
         handler = AsyncMock(side_effect=Exception("Test error"))
+        result: HTTPResult | None = None
 
         async with transport:
+            async with anyio.create_task_group() as tg:
+                result = await tg.start(transport._run_handler, handler, valid_body)
 
-            async def test_run_handler():
-                async with anyio.create_task_group() as tg:
-                    result = await tg.start(transport._run_handler, handler, valid_body)
-                    return result
-
-            result = await test_run_handler()
-
-        # Should return an error response
-        assert isinstance(result, str)
-        assert "error" in result
-        assert "Test error" in result
+                # Should return an error response
+        assert isinstance(result, HTTPResult)
+        assert result.status_code == HTTPStatus.BAD_REQUEST
 
     async def test_send_function_behavior(
         self, transport: StreamableHTTPTransport, sse_headers: dict[str, str], valid_body: str

@@ -8,6 +8,7 @@ Additional streamable-specific tests can be added to this file.
 import anyio
 import pytest
 from helpers.client_session_with_init import ClientSessionWithInit
+from mcp.shared.exceptions import McpError
 from servers.http_server import SERVER_HOST, SERVER_PORT, STREAMABLE_HTTP_MCP_PATH
 from test_http_server import TestHttpServer as HttpServerSuite
 
@@ -141,14 +142,8 @@ class TestStreamableHttpServer(HttpServerSuite):
     async def test_progress_tool_with_invalid_parameters(self, mcp_client: ClientSessionWithInit):
         """Test that parameter validation errors are reported correctly for async progress tools."""
         # Pass invalid parameter type that cannot be coerced
-        result = await mcp_client.call_tool("add_with_progress", {"a": "not_a_number", "b": 5.0})
-
-        assert result.isError is True
-        assert len(result.content) == 1
-        assert result.content[0].type == "text"
-        # Should get validation error before progress reporting starts
-        error_text = result.content[0].text.lower()
-        assert "validation" in error_text or "invalid" in error_text or "error" in error_text
+        with pytest.raises(McpError, match="Input should be a valid number"):
+            await mcp_client.call_tool("add_with_progress", {"a": "not_a_number", "b": 5.0})
 
     async def test_progress_handler_exception_handling(self, mcp_client: ClientSessionWithInit):
         """Test that exceptions in progress handlers don't break tool execution."""
