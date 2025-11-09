@@ -4,11 +4,11 @@ Shared fixtures for MCP integration tests.
 
 from collections.abc import AsyncGenerator
 
+import anyio
 import pytest
 import servers.http_server as http_test_server
 from helpers.http import until_available, url_available
 from helpers.process import run_module
-from psutil import Process
 from servers.http_server import HEALTH_PATH, SERVER_HOST, SERVER_PORT
 
 pytestmark = pytest.mark.anyio
@@ -20,7 +20,7 @@ def anyio_backend():
 
 
 @pytest.fixture(scope="session")
-async def http_test_server_process() -> AsyncGenerator[Process | None, None]:
+async def http_test_server_process() -> AsyncGenerator[None, None]:
     """
     Session-scoped fixture that starts the HTTP test server once across all workers.
 
@@ -34,9 +34,10 @@ async def http_test_server_process() -> AsyncGenerator[Process | None, None]:
         yield None
     else:
         try:
-            async with run_module(http_test_server) as process:
+            async with run_module(http_test_server):
                 await until_available(health_url)
-                yield process
+                yield None
+                await anyio.sleep(1) # Wait a bit for safe shutdown
         except Exception:
             # If server started between our check and start attempt, that's OK
             # Another worker got there first
