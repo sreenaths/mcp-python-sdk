@@ -2,7 +2,7 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError
 from mcp.server.minimcp.utils.mcp_func import MCPFunc
@@ -363,7 +363,7 @@ class TestMCPFuncExecution:
         result = await mcp_func.execute({"a": 42, "b": "hello"})
         assert result == "42hello"
 
-        # Invalid arguments should raise ValidationError
+        # Invalid arguments should raise InvalidArgumentsError
         with pytest.raises(InvalidArgumentsError, match="Input should be a valid integer"):
             await mcp_func.execute({"a": "not_an_int", "b": "hello"})
 
