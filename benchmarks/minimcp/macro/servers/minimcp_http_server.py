@@ -17,7 +17,7 @@ mcp.tool.add(async_compute_all_prime_factors)
 mcp.tool.add(get_memory_usage)
 
 
-app = FastAPI()
+app = FastAPI(lifespan=starlette.streamable_http_lifespan)
 
 
 @app.post(HTTP_MCP_PATH)

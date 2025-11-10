@@ -7,7 +7,13 @@ import pytest
 import mcp.types as types
 from mcp.server.lowlevel.helper_types import ReadResourceContents
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError, MCPRuntimeError, PrimitiveError, ResourceNotFoundError
+from mcp.server.minimcp.exceptions import (
+    InvalidArgumentsError,
+    MCPFuncError,
+    MCPRuntimeError,
+    PrimitiveError,
+    ResourceNotFoundError,
+)
 from mcp.server.minimcp.managers.resource_manager import ResourceDefinition, ResourceManager, _uri_to_pattern
 
 pytestmark = pytest.mark.anyio

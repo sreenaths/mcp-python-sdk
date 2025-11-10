@@ -1,17 +1,17 @@
 import logging
-from types import TracebackType
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import AsyncExitStack
 from http import HTTPStatus
+from types import TracebackType
 
 import anyio
-import mcp.types as types
 from anyio.abc import TaskGroup, TaskStatus
 
+import mcp.types as types
 from mcp.server.minimcp import json_rpc
+from mcp.server.minimcp.exceptions import InvalidMessageError, MCPRuntimeError
 from mcp.server.minimcp.transports.http_transport_base import CONTENT_TYPE_JSON, HTTPResult, HTTPTransportBase
 from mcp.server.minimcp.types import Message, NoMessage, Send
-from mcp.server.minimcp.exceptions import InvalidMessageError, MCPRuntimeError
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,9 @@ class StreamableHTTPTransport(HTTPTransportBase):
         self._tg = await self._stack.enter_async_context(anyio.create_task_group())
         return self
 
-    async def __aexit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None) -> bool | None:
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> bool | None:
         result = await self._stack.__aexit__(exc_type, exc, tb)
         self._tg = None
         self._stack = AsyncExitStack()
@@ -109,7 +111,8 @@ class StreamableHTTPTransport(HTTPTransportBase):
             except InvalidMessageError as e:
                 result = HTTPResult(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
             except Exception as e:
-                # Handler shouldn't raise any exceptions other than InvalidMessageError, so ideally we should not get here
+                # Handler shouldn't raise any exceptions other than InvalidMessageError
+                # Ideally we should not get here
                 response, error_message = json_rpc.build_error_message(
                     e,
                     body,

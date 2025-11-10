@@ -8,10 +8,10 @@ Additional streamable-specific tests can be added to this file.
 import anyio
 import pytest
 from helpers.client_session_with_init import ClientSessionWithInit
-from mcp.shared.exceptions import McpError
 from servers.http_server import SERVER_HOST, SERVER_PORT, STREAMABLE_HTTP_MCP_PATH
 from test_http_server import TestHttpServer as HttpServerSuite
 
+from mcp.shared.exceptions import McpError
 from mcp.types import CallToolResult, TextContent
 
 pytestmark = pytest.mark.anyio

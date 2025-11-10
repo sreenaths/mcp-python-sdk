@@ -3,7 +3,6 @@ from unittest.mock import Mock
 
 import anyio
 import pytest
-from pydantic import ValidationError
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server

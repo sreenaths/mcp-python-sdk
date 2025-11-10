@@ -1,6 +1,6 @@
 """Comprehensive stdio transport tests."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -9,102 +9,74 @@ from mcp.server.minimcp.types import NoMessage, Send
 
 pytestmark = pytest.mark.anyio
 
-WRITE_MSG_PATH = "mcp.server.minimcp.transports.stdio.write_msg"
-
 
 class TestWriteMsg:
-    """Test suite for write_msg function."""
+    """Test suite for _write_msg function."""
 
-    async def test_write_msg_with_message(self):
-        """Test write_msg writes message to stdout."""
+    async def test__write_msg_with_message(self):
+        """Test _write_msg writes message to stdout."""
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdout", mock_stdout):
-            message = '{"jsonrpc":"2.0","id":1,"result":"test"}'
-            await stdio.write_msg(message)
+        message = '{"jsonrpc":"2.0","id":1,"result":"test"}'
+        await stdio._write_msg(mock_stdout, message)
 
-            # Should write message with newline (no flush in current implementation)
-            mock_stdout.write.assert_called_once_with(message + "\n")
+        # Should write message with newline
+        mock_stdout.write.assert_called_once_with(message + "\n")
 
-    async def test_write_msg_with_no_message(self):
-        """Test write_msg skips writing for NoMessage."""
+    async def test__write_msg_with_empty_string(self):
+        """Test _write_msg writes empty string (edge case)."""
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.write_msg(NoMessage.NOTIFICATION)
+        await stdio._write_msg(mock_stdout, "")
 
-            # Should not write anything
-            mock_stdout.write.assert_not_called()
+        # Should write even empty string with newline
+        mock_stdout.write.assert_called_once_with("\n")
 
-    async def test_write_msg_with_no_message_response(self):
-        """Test write_msg skips writing for NoMessage.RESPONSE."""
+    async def test__write_msg_rejects_embedded_newline(self):
+        """Test _write_msg rejects messages with embedded newlines per MCP spec."""
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.write_msg(NoMessage.RESPONSE)
+        message_with_newline = '{"jsonrpc":"2.0",\n"id":1}'
 
-            # Should not write anything
-            mock_stdout.write.assert_not_called()
+        with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
+            await stdio._write_msg(mock_stdout, message_with_newline)
 
-    async def test_write_msg_with_empty_string(self):
-        """Test write_msg writes empty string (edge case)."""
+        # Should not write anything
+        mock_stdout.write.assert_not_called()
+
+    async def test__write_msg_rejects_embedded_carriage_return(self):
+        """Test _write_msg rejects messages with embedded carriage returns per MCP spec."""
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.write_msg("")
+        message_with_cr = '{"jsonrpc":"2.0",\r"id":1}'
 
-            # Should write even empty string with newline (no flush in current implementation)
-            mock_stdout.write.assert_called_once_with("\n")
+        with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
+            await stdio._write_msg(mock_stdout, message_with_cr)
 
-    async def test_write_msg_rejects_embedded_newline(self):
-        """Test write_msg rejects messages with embedded newlines per MCP spec."""
+        # Should not write anything
+        mock_stdout.write.assert_not_called()
+
+    async def test__write_msg_rejects_embedded_crlf(self):
+        """Test _write_msg rejects messages with embedded CRLF sequences per MCP spec."""
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdout", mock_stdout):
-            message_with_newline = '{"jsonrpc":"2.0",\n"id":1}'
+        message_with_crlf = '{"jsonrpc":"2.0",\r\n"id":1}'
 
-            with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
-                await stdio.write_msg(message_with_newline)
+        with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
+            await stdio._write_msg(mock_stdout, message_with_crlf)
 
-            # Should not write anything
-            mock_stdout.write.assert_not_called()
+        # Should not write anything
+        mock_stdout.write.assert_not_called()
 
-    async def test_write_msg_rejects_embedded_carriage_return(self):
-        """Test write_msg rejects messages with embedded carriage returns per MCP spec."""
+    async def test__write_msg_accepts_message_without_embedded_newlines(self):
+        """Test _write_msg accepts valid messages without embedded newlines."""
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdout", mock_stdout):
-            message_with_cr = '{"jsonrpc":"2.0",\r"id":1}'
+        valid_message = '{"jsonrpc":"2.0","id":1,"method":"test","params":{"key":"value"}}'
+        await stdio._write_msg(mock_stdout, valid_message)
 
-            with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
-                await stdio.write_msg(message_with_cr)
-
-            # Should not write anything
-            mock_stdout.write.assert_not_called()
-
-    async def test_write_msg_rejects_embedded_crlf(self):
-        """Test write_msg rejects messages with embedded CRLF sequences per MCP spec."""
-        mock_stdout = AsyncMock()
-
-        with patch.object(stdio, "_stdout", mock_stdout):
-            message_with_crlf = '{"jsonrpc":"2.0",\r\n"id":1}'
-
-            with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
-                await stdio.write_msg(message_with_crlf)
-
-            # Should not write anything
-            mock_stdout.write.assert_not_called()
-
-    async def test_write_msg_accepts_message_without_embedded_newlines(self):
-        """Test write_msg accepts valid messages without embedded newlines."""
-        mock_stdout = AsyncMock()
-
-        with patch.object(stdio, "_stdout", mock_stdout):
-            valid_message = '{"jsonrpc":"2.0","id":1,"method":"test","params":{"key":"value"}}'
-            await stdio.write_msg(valid_message)
-
-            # Should write message with trailing newline
-            mock_stdout.write.assert_called_once_with(valid_message + "\n")
+        # Should write message with trailing newline
+        mock_stdout.write.assert_called_once_with(valid_message + "\n")
 
 
 class TestHandleMessage:
@@ -115,58 +87,54 @@ class TestHandleMessage:
         handler = AsyncMock(return_value='{"result":"success"}')
         mock_write = AsyncMock()
 
-        with patch(WRITE_MSG_PATH, mock_write):
-            # _handle_message receives already-stripped line from transport()
-            await stdio._handle_message(handler, '{"jsonrpc":"2.0","method":"test"}')
+        # _handle_message receives already-stripped line from transport()
+        await stdio._handle_message(handler, '{"jsonrpc":"2.0","method":"test"}', mock_write)
 
-            # Handler should be called with line and write_msg callback
-            handler.assert_called_once()
-            call_args = handler.call_args[0]
-            assert call_args[0] == '{"jsonrpc":"2.0","method":"test"}'
-            assert callable(call_args[1])
+        # Handler should be called with line and write callback
+        handler.assert_called_once()
+        call_args = handler.call_args[0]
+        assert call_args[0] == '{"jsonrpc":"2.0","method":"test"}'
+        assert callable(call_args[1])
 
-            # Response should be written
-            mock_write.assert_called_once_with('{"result":"success"}')
+        # Response should be written
+        mock_write.assert_called_once_with('{"result":"success"}')
 
     async def test_handle_message_passes_line_as_is(self):
         """Test _handle_message passes line to handler as-is."""
         handler = AsyncMock(return_value='{"result":"ok"}')
         mock_write = AsyncMock()
 
-        with patch(WRITE_MSG_PATH, mock_write):
-            # The transport() strips, but _handle_message doesn't
-            test_line = '{"test":1}'
-            await stdio._handle_message(handler, test_line)
+        # The transport() strips, but _handle_message doesn't
+        test_line = '{"test":1}'
+        await stdio._handle_message(handler, test_line, mock_write)
 
-            # Line should be passed as-is
-            call_args = handler.call_args[0]
-            assert call_args[0] == test_line
+        # Line should be passed as-is
+        call_args = handler.call_args[0]
+        assert call_args[0] == test_line
 
     async def test_handle_message_always_calls_handler(self):
         """Test _handle_message always calls handler (empty check is in transport)."""
         handler = AsyncMock(return_value='{"ok":true}')
         mock_write = AsyncMock()
 
-        with patch(WRITE_MSG_PATH, mock_write):
-            # _handle_message doesn't check for empty - that's in transport()
-            await stdio._handle_message(handler, "test")
+        # _handle_message doesn't check for empty - that's in transport()
+        await stdio._handle_message(handler, "test", mock_write)
 
-            # Handler should be called
-            handler.assert_called_once()
+        # Handler should be called
+        handler.assert_called_once()
 
     async def test_handle_message_with_no_message_response(self):
         """Test _handle_message handles NoMessage return."""
         handler = AsyncMock(return_value=NoMessage.NOTIFICATION)
         mock_write = AsyncMock()
 
-        with patch(WRITE_MSG_PATH, mock_write):
-            await stdio._handle_message(handler, '{"method":"notify"}')
+        await stdio._handle_message(handler, '{"method":"notify"}', mock_write)
 
-            # Handler should be called
-            handler.assert_called_once()
+        # Handler should be called
+        handler.assert_called_once()
 
-            # write_msg should be called with NoMessage
-            mock_write.assert_called_once_with(NoMessage.NOTIFICATION)
+        # write should NOT be called for NoMessage (checked with isinstance)
+        mock_write.assert_not_called()
 
 
 class TestStdioTransport:
@@ -189,15 +157,14 @@ class TestStdioTransport:
 
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdin", mock_stdin), patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.transport(echo_handler)
+        await stdio.transport(echo_handler, stdin=mock_stdin, stdout=mock_stdout)
 
-            # Handler should have received the message
-            assert len(received_messages) == 1
-            assert received_messages[0] == '{"jsonrpc":"2.0","id":1,"method":"test"}'
+        # Handler should have received the message
+        assert len(received_messages) == 1
+        assert received_messages[0] == '{"jsonrpc":"2.0","id":1,"method":"test"}'
 
-            # Response should be written to stdout
-            assert mock_stdout.write.call_count >= 1
+        # Response should be written to stdout
+        assert mock_stdout.write.call_count >= 1
 
     async def test_transport_relays_multiple_messages(self):
         """Test transport relays multiple messages."""
@@ -217,14 +184,13 @@ class TestStdioTransport:
 
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdin", mock_stdin), patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.transport(collecting_handler)
+        await stdio.transport(collecting_handler, stdin=mock_stdin, stdout=mock_stdout)
 
-            # All messages should be received
-            assert len(received_messages) == 3
-            assert '{"jsonrpc":"2.0","id":1,"method":"test1"}' in received_messages
-            assert '{"jsonrpc":"2.0","id":2,"method":"test2"}' in received_messages
-            assert '{"jsonrpc":"2.0","id":3,"method":"test3"}' in received_messages
+        # All messages should be received
+        assert len(received_messages) == 3
+        assert '{"jsonrpc":"2.0","id":1,"method":"test1"}' in received_messages
+        assert '{"jsonrpc":"2.0","id":2,"method":"test2"}' in received_messages
+        assert '{"jsonrpc":"2.0","id":3,"method":"test3"}' in received_messages
 
     async def test_transport_handler_can_use_send_callback(self):
         """Test handler can use send callback to write intermediate messages."""
@@ -243,13 +209,12 @@ class TestStdioTransport:
 
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdin", mock_stdin), patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.transport(handler_with_callback)
+        await stdio.transport(handler_with_callback, stdin=mock_stdin, stdout=mock_stdout)
 
-            # Handler should have sent intermediate message
-            assert len(sent_messages) == 1
-            # stdout.write should be called for both intermediate and final
-            assert mock_stdout.write.call_count >= 2
+        # Handler should have sent intermediate message
+        assert len(sent_messages) == 1
+        # stdout.write should be called for both intermediate and final
+        assert mock_stdout.write.call_count >= 2
 
     async def test_transport_skips_empty_lines(self):
         """Test transport skips empty lines."""
@@ -270,11 +235,10 @@ class TestStdioTransport:
 
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdin", mock_stdin), patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.transport(collecting_handler)
+        await stdio.transport(collecting_handler, stdin=mock_stdin, stdout=mock_stdout)
 
-            # Only non-empty messages should be received
-            assert len(received_messages) == 2
+        # Only non-empty messages should be received
+        assert len(received_messages) == 2
 
     async def test_transport_concurrent_message_handling(self):
         """Test transport handles messages concurrently."""
@@ -300,14 +264,13 @@ class TestStdioTransport:
 
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdin", mock_stdin), patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.transport(concurrent_handler)
+        await stdio.transport(concurrent_handler, stdin=mock_stdin, stdout=mock_stdout)
 
-            # Fast message should complete before slow message
-            assert len(completed_order) == 2
-            # Message 2 (fast) should complete first
-            assert completed_order[0] == "2"
-            assert completed_order[1] == "1"
+        # Fast message should complete before slow message
+        assert len(completed_order) == 2
+        # Message 2 (fast) should complete first
+        assert completed_order[0] == "2"
+        assert completed_order[1] == "1"
 
     async def test_transport_handler_returns_no_message(self):
         """Test transport handles NoMessage return from handler."""
@@ -321,12 +284,11 @@ class TestStdioTransport:
 
         mock_stdout = AsyncMock()
 
-        with patch.object(stdio, "_stdin", mock_stdin), patch.object(stdio, "_stdout", mock_stdout):
-            await stdio.transport(notification_handler)
+        await stdio.transport(notification_handler, stdin=mock_stdin, stdout=mock_stdout)
 
-            # write should not be called for NoMessage
-            # (write_msg checks isinstance and skips)
-            assert mock_stdout.write.call_count == 0
+        # write should not be called for NoMessage
+        # (_handle_message checks isinstance and skips)
+        assert mock_stdout.write.call_count == 0
 
 
 class TestStdioTransportSimple:
@@ -340,8 +302,10 @@ class TestStdioTransportSimple:
         import inspect
 
         sig = inspect.signature(stdio.transport)
-        assert len(sig.parameters) == 1
+        assert len(sig.parameters) == 3
         assert "handler" in sig.parameters
+        assert "stdin" in sig.parameters
+        assert "stdout" in sig.parameters
 
     def test_stdio_transport_is_async(self):
         """Test that stdio.transport is an async function."""

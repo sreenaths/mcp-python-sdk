@@ -1,6 +1,7 @@
 import logging
 import sys
 from collections.abc import Awaitable, Callable
+from functools import partial
 from io import TextIOWrapper
 
 import anyio
@@ -15,11 +16,8 @@ logger = logging.getLogger(__name__)
 
 StdioRequestHandler = Callable[[Message, Send], Awaitable[Message | NoMessage]]
 
-_stdin = anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))
-_stdout = anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True))
 
-
-async def write_msg(response: Message | NoMessage):
+async def _write_msg(stdout: anyio.AsyncFile[str], response: Message) -> None:
     """Write a message to stdout.
 
     Per the MCP stdio transport specification, messages MUST NOT contain embedded newlines.
@@ -31,18 +29,17 @@ async def write_msg(response: Message | NoMessage):
     Raises:
         ValueError: If the message contains embedded newlines (violates stdio spec).
     """
-    if not isinstance(response, NoMessage):
-        if "\n" in response or "\r" in response:
-            raise ValueError("Messages MUST NOT contain embedded newlines")
+    if "\n" in response or "\r" in response:
+        raise ValueError("Messages MUST NOT contain embedded newlines")
 
-        logger.debug("Writing response message to stdio: %s", response)
-        await _stdout.write(response + "\n")
+    logger.debug("Writing response message to stdio: %s", response)
+    await stdout.write(response + "\n")
 
 
-async def _handle_message(handler: StdioRequestHandler, line: str):
+async def _handle_message(handler: StdioRequestHandler, line: str, write_msg: Callable[[Message], Awaitable[None]]):
     logger.debug("Handling incoming message: %s", line)
 
-    response: Message | NoMessage = NoMessage.NONE
+    response: Message | NoMessage | None = None
 
     try:
         response = await handler(line, write_msg)
@@ -58,10 +55,13 @@ async def _handle_message(handler: StdioRequestHandler, line: str):
         )
         logger.exception(f"Unexpected error in stdio transport: {error_message}")
 
-    await write_msg(response)
+    if isinstance(response, Message):
+        await write_msg(response)
 
 
-async def transport(handler: StdioRequestHandler):
+async def transport(
+    handler: StdioRequestHandler, stdin: anyio.AsyncFile[str] | None = None, stdout: anyio.AsyncFile[str] | None = None
+):
     """stdio transport implementation per MCP specification.
 
     Implements the stdio transport as defined in:
@@ -107,13 +107,20 @@ async def transport(handler: StdioRequestHandler):
         ValueError: If a message contains embedded newlines (spec violation)
     """
 
+    if not stdin:
+        stdin = anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))
+    if not stdout:
+        stdout = anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True))
+
+    write_msg = partial(_write_msg, stdout)
+
     try:
         logger.debug("Starting stdio transport")
         async with anyio.create_task_group() as tg:
-            async for line in _stdin:
+            async for line in stdin:
                 _line = line.strip()
                 if _line:
-                    tg.start_soon(_handle_message, handler, _line)
+                    tg.start_soon(_handle_message, handler, _line, write_msg)
     except anyio.ClosedResourceError:
         # Stdin was closed (e.g., during shutdown)
         # Use checkpoint to allow cancellation to be processed

@@ -564,9 +564,10 @@ MiniMCP comes with a smart Streamable HTTP implementation. It keeps track of the
 - If the server cannot accept, it MUST return an HTTP error status code (e.g., 400 Bad Request). The HTTP response body MAY comprise a JSON-RPC error response that has no id.
 - Multiple POST requests must be served concurrently by the server.
 
-## Error Handling
+## Error Handling - ext
 
 Prompt: + HTTP status codes
+
 - Parse error: | -32700 (Parse error)
 - UnsupportedRPCMessageType | If we get any JSON-RPC message other than JSONRPCRequest or JSONRPCNotification | -32600 (Invalid Request)
 - MethodNotFoundError | -32601 (Method not found) | When there are no handlers registered for request type - Eg: tool calla completion etc
@@ -577,16 +578,18 @@ Prompt: + HTTP status codes
 - Internal errors: -32603 (Internal error)
 
 Resource: + HTTP status codes
+
 - Parse error: | -32700 (Parse error)
 - UnsupportedRPCMessageType | If we get any JSON-RPC message other than JSONRPCRequest or JSONRPCNotification | -32600 (Invalid Request)
 - MethodNotFoundError | -32601 (Method not found) | When there are no handlers registered for request type - Eg: tool calla completion etc
 
 - Resource not found: {name} | -32002 (Resource not found) | Pass uri in data
-    - No invalid or missing required arguments, as the resource cannot be matched with missing arguments, so its just resource not found
+  - No invalid or missing required arguments, as the resource cannot be matched with missing arguments, so its just resource not found
 - Internal errors: -32603 (Internal error) | Pass uri in data
 
 Tools:
 Protocol Errors: Standard JSON-RPC errors for issues like | + HTTP status codes
+
 - Parse error: | -32700 (Parse error)
 - UnsupportedRPCMessageType | If we get any JSON-RPC message other than JSONRPCRequest or JSONRPCNotification | -32600 (Invalid Request)
 - MethodNotFoundError | -32601 (Method not found) | When there are no handlers registered for request type - Eg: tool calla completion etc
@@ -596,8 +599,8 @@ Protocol Errors: Standard JSON-RPC errors for issues like | + HTTP status codes
 - Server errors: -32603 (Internal error)
 
 Tool Execution Errors: Reported in tool results with isError: true (HTTP status code 200)
-- call_tool decorator server already does that for - invalid return type, Invalid return compared to outputSchema, and any other exception while executing the handler
 
+- call_tool decorator server already does that for - invalid return type, Invalid return compared to outputSchema, and any other exception while executing the handler
 
 CONNECTION_CLOSED = -32000 >>>> Could use when connection was canceled in a running handler specially HTTP
 
@@ -607,7 +610,6 @@ INVALID_REQUEST = -32600 (400 Bad Request)
 METHOD_NOT_FOUND = -32601 (404 Not Found)
 INVALID_PARAMS = -32602 (422 Unprocessable Content / 400 Bad Request)
 INTERNAL_ERROR = -32603 (500 Internal Server Error)
-
 
 ## Error Management
 
@@ -634,6 +636,7 @@ These errors are common across all primitives (prompts, resources, tools) and tr
 #### 1. Parse Errors (`-32700`)
 
 **Triggered when:**
+
 - Invalid JSON in request body
 - Malformed UTF-8 encoding
 - Request cannot be parsed
@@ -641,6 +644,7 @@ These errors are common across all primitives (prompts, resources, tools) and tr
 **HTTP Status:** `400 Bad Request`
 
 **Response format:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -655,6 +659,7 @@ These errors are common across all primitives (prompts, resources, tools) and tr
 #### 2. Invalid Request (`-32600`)
 
 **Triggered when:**
+
 - JSON-RPC message is not a `JSONRPCRequest` or `JSONRPCNotification`
 - Missing required JSON-RPC fields (`jsonrpc`, `method`)
 - Invalid JSON-RPC version (must be "2.0")
@@ -662,6 +667,7 @@ These errors are common across all primitives (prompts, resources, tools) and tr
 **HTTP Status:** `400 Bad Request`
 
 **Response format:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -676,12 +682,14 @@ These errors are common across all primitives (prompts, resources, tools) and tr
 #### 3. Method Not Found (`-32601`)
 
 **Triggered when:**
+
 - No handler registered for the requested method
 - Method name does not match any available operation (e.g., `tools/call`, `resources/read`, `prompts/get`)
 
 **HTTP Status:** `404 Not Found`
 
 **Response format:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -696,6 +704,7 @@ These errors are common across all primitives (prompts, resources, tools) and tr
 #### 4. Connection Closed (`-32000`)
 
 **Triggered when:**
+
 - Connection was canceled during handler execution
 - Primarily used in HTTP-based transports for client-initiated cancellations
 
@@ -764,6 +773,7 @@ Triggered when the prompt handler encounters an unexpected error during executio
 **Resource Not Found (`-32002`):**
 
 Triggered when:
+
 - The requested resource URI does not exist
 - Resource template cannot be matched with provided parameters
 - No resource handler matches the URI pattern
@@ -826,6 +836,7 @@ Triggered when the requested tool does not exist.
 **Invalid Arguments (`-32602`):**
 
 Triggered when:
+
 - Tool arguments fail input schema validation
 - Missing required parameters
 - Type mismatches with the defined input schema
@@ -854,6 +865,7 @@ Triggered when the tool handler encounters an unexpected internal error.
 Tool execution errors are handled differently from protocol errors. They are **NOT** returned as JSON-RPC errors but instead as successful responses with `isError: true`.
 
 **When to use:**
+
 - API call failures within the tool
 - Business logic errors
 - Invalid return types from tool handlers
@@ -863,6 +875,7 @@ Tool execution errors are handled differently from protocol errors. They are **N
 **HTTP Status:** `200 OK` (the request was successfully processed, but the tool execution failed)
 
 **Response format:**
+
 ```json
 {
   "jsonrpc": "2.0",
@@ -882,6 +895,7 @@ Tool execution errors are handled differently from protocol errors. They are **N
 **Automatic Handling:**
 
 The `call_tool` decorator in MiniMCP automatically handles:
+
 - Invalid return types from tool handlers
 - Output schema validation failures (when `outputSchema` is defined)
 - Uncaught exceptions during tool execution

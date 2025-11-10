@@ -113,9 +113,14 @@ class TestStarletteTransports:
         with patch(f"{STARLETTE_MODULE_NAME}.getattr", return_value=None):
             response = await streamable_http_transport(mock_streamable_handler, mock_request)
 
-        assert isinstance(response, Response)
-        # May not be 200 due to header validation
-        mock_request.body.assert_called_once()
+        try:
+            assert isinstance(response, Response)
+            # May not be 200 due to header validation
+            mock_request.body.assert_called_once()
+        finally:
+            # Clean up background task to prevent resource leaks
+            if hasattr(response, "background") and response.background:
+                await response.background()
 
     async def test_streamable_http_transport_with_app_transport(
         self, mock_streamable_handler: AsyncMock, mock_request: Mock
@@ -176,8 +181,13 @@ class TestStarletteTransports:
         with patch(f"{STARLETTE_MODULE_NAME}.getattr", return_value=None):
             response = await streamable_http_transport(handler, mock_request)
 
-        assert isinstance(response, Response)
-        # Status code depends on transport validation
+        try:
+            assert isinstance(response, Response)
+            # Status code depends on transport validation
+        finally:
+            # Clean up background task to prevent resource leaks
+            if hasattr(response, "background") and response.background:
+                await response.background()
 
     async def test_streamable_http_transport_custom_ping(self, mock_streamable_handler: AsyncMock, mock_request: Mock):
         """Test streamable HTTP transport with custom ping interval."""
@@ -262,9 +272,14 @@ class TestStarletteTransports:
         with patch(f"{STARLETTE_MODULE_NAME}.getattr", return_value=None):
             response = await streamable_http_transport(mock_streamable_handler, request)
 
-        assert isinstance(response, Response)
-        # Verify the handler was called
-        mock_streamable_handler.assert_called()
+        try:
+            assert isinstance(response, Response)
+            # Verify the handler was called
+            mock_streamable_handler.assert_called()
+        finally:
+            # Clean up background task to prevent resource leaks
+            if hasattr(response, "background") and response.background:
+                await response.background()
 
     async def test_streamable_http_transport_background_task_cleanup(
         self, mock_streamable_handler: AsyncMock, mock_request: Mock
@@ -302,8 +317,13 @@ class TestStarletteTransports:
         with patch(f"{STARLETTE_MODULE_NAME}.getattr", return_value=None):
             response = await streamable_http_transport(handler, mock_request)
 
-        # Should still return a response (error handling is done in the transport layer)
-        assert isinstance(response, Response)
+        try:
+            # Should still return a response (error handling is done in the transport layer)
+            assert isinstance(response, Response)
+        finally:
+            # Clean up background task to prevent resource leaks
+            if hasattr(response, "background") and response.background:
+                await response.background()
 
     def test_integration_with_starlette_app(self, mock_handler: AsyncMock):
         """Test integration with a real Starlette application."""

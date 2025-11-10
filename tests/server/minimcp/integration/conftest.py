@@ -37,7 +37,7 @@ async def http_test_server_process() -> AsyncGenerator[None, None]:
             async with run_module(http_test_server):
                 await until_available(health_url)
                 yield None
-                await anyio.sleep(1) # Wait a bit for safe shutdown
+                await anyio.sleep(1)  # Wait a bit for safe shutdown
         except Exception:
             # If server started between our check and start attempt, that's OK
             # Another worker got there first

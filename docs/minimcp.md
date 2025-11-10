@@ -278,10 +278,7 @@ await starlette.streamable_http_transport(mcp.handle, request)
 
 For more details on supported transports, please check the [specification compliance](../docs/minimcp-transport-specification-compliance.md) document.
 
-
 ## Error Handling
-
-
 
 ## Examples
 
