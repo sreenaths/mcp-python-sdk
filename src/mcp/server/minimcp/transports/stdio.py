@@ -1,7 +1,6 @@
 import logging
 import sys
 from io import TextIOWrapper
-from typing import Generic
 
 import anyio
 import anyio.lowlevel
@@ -11,12 +10,13 @@ from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
+from mcp.server.minimcp.transports.base_transport import BaseTransport
 from mcp.server.minimcp.types import Message, NoMessage
 
 logger = logging.getLogger(__name__)
 
 
-class StdioTransport(Generic[ScopeT]):
+class StdioTransport(BaseTransport[ScopeT]):
     """stdio transport implementation per MCP specification.
     https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#stdio
 
