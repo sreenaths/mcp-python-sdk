@@ -5,7 +5,7 @@ from benchmarks.minimcp.core.memory_baseline import get_memory_usage
 import anyio
 
 from benchmarks.minimcp.core.sample_tools import async_compute_all_prime_factors, compute_all_prime_factors
-from mcp.server.minimcp import MiniMCP, stdio
+from mcp.server.minimcp import MiniMCP, StdioTransport
 
 mcp = MiniMCP[None](name="MinimCP", max_concurrency=1000)  # Not enforcing concurrency controls for this benchmark
 
@@ -14,8 +14,10 @@ mcp.tool.add(async_compute_all_prime_factors)
 mcp.tool.add(get_memory_usage)
 
 
+def main():
+    transport = StdioTransport[None](mcp)
+    anyio.run(transport.start)
+
+
 if __name__ == "__main__":
-    anyio.run(
-        stdio.transport,
-        mcp.handle,
-    )
+    main()

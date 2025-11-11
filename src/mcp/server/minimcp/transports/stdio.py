@@ -1,8 +1,7 @@
 import logging
 import sys
-from collections.abc import Awaitable, Callable
-from functools import partial
 from io import TextIOWrapper
+from typing import Generic
 
 import anyio
 import anyio.lowlevel
@@ -10,68 +9,17 @@ import anyio.lowlevel
 from mcp import types
 from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
-from mcp.server.minimcp.types import Message, NoMessage, Send
+from mcp.server.minimcp.managers.context_manager import ScopeT
+from mcp.server.minimcp.minimcp import MiniMCP
+from mcp.server.minimcp.types import Message, NoMessage
 
 logger = logging.getLogger(__name__)
 
-StdioRequestHandler = Callable[[Message, Send], Awaitable[Message | NoMessage]]
 
-
-async def _write_msg(stdout: anyio.AsyncFile[str], response: Message) -> None:
-    """Write a message to stdout.
-
-    Per the MCP stdio transport specification, messages MUST NOT contain embedded newlines.
-    This function validates that constraint before writing.
-
-    Args:
-        response: The message to write, or NoMessage if no response is needed.
-
-    Raises:
-        ValueError: If the message contains embedded newlines (violates stdio spec).
-    """
-    if "\n" in response or "\r" in response:
-        raise ValueError("Messages MUST NOT contain embedded newlines")
-
-    logger.debug("Writing response message to stdio: %s", response)
-    await stdout.write(response + "\n")
-
-
-async def _handle_message(handler: StdioRequestHandler, line: str, write_msg: Callable[[Message], Awaitable[None]]):
-    logger.debug("Handling incoming message: %s", line)
-
-    response: Message | NoMessage | None = None
-
-    try:
-        response = await handler(line, write_msg)
-        logger.debug("Handling completed. Response: %s", response)
-    except InvalidMessageError as e:
-        response = e.response
-    except Exception as e:
-        response, error_message = json_rpc.build_error_message(
-            e,
-            line,
-            types.INTERNAL_ERROR,
-            include_stack_trace=True,
-        )
-        logger.exception(f"Unexpected error in stdio transport: {error_message}")
-
-    if isinstance(response, Message):
-        await write_msg(response)
-
-
-async def transport(
-    handler: StdioRequestHandler, stdin: anyio.AsyncFile[str] | None = None, stdout: anyio.AsyncFile[str] | None = None
-):
+class StdioTransport(Generic[ScopeT]):
     """stdio transport implementation per MCP specification.
-
-    Implements the stdio transport as defined in:
     https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#stdio
 
-    This transport reads JSON-RPC messages from stdin and writes to stdout, with messages
-    delimited by newlines. All messages MUST be UTF-8 encoded and MUST NOT contain embedded
-    newlines per the specification.
-
-    Per the MCP stdio transport specification:
     - The server reads JSON-RPC messages from its standard input (stdin)
     - The server sends messages to its standard output (stdout)
     - Messages are individual JSON-RPC requests, notifications, or responses
@@ -93,37 +41,89 @@ async def transport(
     - The anyio.wrap_file implementation naturally applies backpressure
     - Concurrent message handling via task groups
     - Concurrency management is enforced by MiniMCP
-    - Exceptions propagated from handler will cause transport termination
-
-    Args:
-        handler: A function that will be called for each incoming message. It will be called
-            with the message and a send function to write responses. The message returned by
-            the function will be sent back to the client.
-
-    Returns:
-        None
-
-    Raises:
-        ValueError: If a message contains embedded newlines (spec violation)
+    - Exceptions are formatted as standard MCP errors, and shouldn't cause the transport to terminate
     """
 
-    if not stdin:
-        stdin = anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))
-    if not stdout:
-        stdout = anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True))
+    minimcp: MiniMCP[ScopeT]
 
-    write_msg = partial(_write_msg, stdout)
+    stdin: anyio.AsyncFile[str]
+    stdout: anyio.AsyncFile[str]
 
-    try:
-        logger.debug("Starting stdio transport")
-        async with anyio.create_task_group() as tg:
-            async for line in stdin:
-                _line = line.strip()
-                if _line:
-                    tg.start_soon(_handle_message, handler, _line, write_msg)
-    except anyio.ClosedResourceError:
-        # Stdin was closed (e.g., during shutdown)
-        # Use checkpoint to allow cancellation to be processed
-        await anyio.lowlevel.checkpoint()
-    finally:
-        logger.debug("Stdio transport stopped")
+    def __init__(
+        self,
+        minimcp: MiniMCP[ScopeT],
+        stdin: anyio.AsyncFile[str] | None = None,
+        stdout: anyio.AsyncFile[str] | None = None,
+    ) -> None:
+        self.minimcp = minimcp
+
+        self.stdin = stdin or anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))
+        self.stdout = stdout or anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True))
+
+    async def write_msg(self, response_msg: Message) -> None:
+        """Write a message to stdout.
+
+        Per the MCP stdio transport specification, messages MUST NOT contain embedded newlines.
+        This function validates that constraint before writing.
+
+        Args:
+            response_msg: The message to write into stdout
+
+        Raises:
+            ValueError: If the message contains embedded newlines (violates stdio spec).
+        """
+        if "\n" in response_msg or "\r" in response_msg:
+            raise ValueError("Messages MUST NOT contain embedded newlines")
+
+        logger.debug("Writing response message to stdio: %s", response_msg)
+        await self.stdout.write(response_msg + "\n")
+
+    async def dispatch(self, received_msg: Message) -> None:
+        """
+        Dispatch an incoming message to the MiniMCP instance, and write the response to stdout.
+        Exceptions are formatted as standard MCP errors, and shouldn't cause the transport to terminate.
+
+        Args:
+            received_msg: The message to dispatch to the MiniMCP instance
+        """
+
+        response: Message | NoMessage | None = None
+
+        try:
+            logger.debug("Handling incoming message: %s", received_msg)
+            response = await self.minimcp.handle(received_msg, self.write_msg)
+            logger.debug("Handling completed. Response: %s", response)
+        except InvalidMessageError as e:
+            response = e.response
+        except Exception as e:
+            response, error_message = json_rpc.build_error_message(
+                e,
+                received_msg,
+                types.INTERNAL_ERROR,
+                include_stack_trace=True,
+            )
+            logger.exception(f"Unexpected error in stdio transport: {error_message}")
+
+        if isinstance(response, Message):
+            await self.write_msg(response)
+
+    async def start(self) -> None:
+        """
+        Start the stdio transport.
+        This will read messages from stdin and dispatch them to the MiniMCP instance, and write
+        the response to stdout. The transport must run until the stdin is closed.
+        """
+
+        try:
+            logger.debug("Starting stdio transport")
+            async with anyio.create_task_group() as tg:
+                async for line in self.stdin:
+                    _line = line.strip()
+                    if _line:
+                        tg.start_soon(self.dispatch, _line)
+        except anyio.ClosedResourceError:
+            # Stdin was closed (e.g., during shutdown)
+            # Use checkpoint to allow cancellation to be processed
+            await anyio.lowlevel.checkpoint()
+        finally:
+            logger.debug("Stdio transport stopped")

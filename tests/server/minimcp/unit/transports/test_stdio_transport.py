@@ -1,94 +1,91 @@
 """Comprehensive stdio transport tests."""
 
+from typing import Any
 from unittest.mock import AsyncMock
 
+import anyio
 import pytest
 
-from mcp.server.minimcp.transports import stdio
+from mcp.server.minimcp import MiniMCP
+from mcp.server.minimcp.transports.stdio import StdioTransport
 from mcp.server.minimcp.types import NoMessage, Send
 
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture
+def mock_stdout() -> AsyncMock:
+    return AsyncMock()
+
+
+@pytest.fixture
+def mock_stdin() -> AsyncMock:
+    return AsyncMock()
+
+
+@pytest.fixture
+def stdio_transport(mock_stdin: AsyncMock, mock_stdout: AsyncMock) -> StdioTransport[Any]:
+    mcp = AsyncMock(spec=MiniMCP[Any])
+    return StdioTransport[Any](mcp, mock_stdin, mock_stdout)
+
+
 class TestWriteMsg:
-    """Test suite for _write_msg function."""
+    """Test suite for write_msg function."""
 
-    async def test__write_msg_with_message(self):
+    async def test__write_msg_with_message(self, stdio_transport: StdioTransport[Any], mock_stdout: AsyncMock):
         """Test _write_msg writes message to stdout."""
-        mock_stdout = AsyncMock()
-
         message = '{"jsonrpc":"2.0","id":1,"result":"test"}'
-        await stdio._write_msg(mock_stdout, message)
+        await stdio_transport.write_msg(message)
 
         # Should write message with newline
         mock_stdout.write.assert_called_once_with(message + "\n")
 
-    async def test__write_msg_with_empty_string(self):
-        """Test _write_msg writes empty string (edge case)."""
-        mock_stdout = AsyncMock()
-
-        await stdio._write_msg(mock_stdout, "")
-
-        # Should write even empty string with newline
-        mock_stdout.write.assert_called_once_with("\n")
-
-    async def test__write_msg_rejects_embedded_newline(self):
+    async def test__write_msg_rejects_embedded_newline(self, stdio_transport: StdioTransport[Any]):
         """Test _write_msg rejects messages with embedded newlines per MCP spec."""
-        mock_stdout = AsyncMock()
-
         message_with_newline = '{"jsonrpc":"2.0",\n"id":1}'
 
         with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
-            await stdio._write_msg(mock_stdout, message_with_newline)
+            await stdio_transport.write_msg(message_with_newline)
 
-        # Should not write anything
-        mock_stdout.write.assert_not_called()
-
-    async def test__write_msg_rejects_embedded_carriage_return(self):
+    async def test__write_msg_rejects_embedded_carriage_return(self, stdio_transport: StdioTransport[Any]):
         """Test _write_msg rejects messages with embedded carriage returns per MCP spec."""
-        mock_stdout = AsyncMock()
-
         message_with_cr = '{"jsonrpc":"2.0",\r"id":1}'
 
         with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
-            await stdio._write_msg(mock_stdout, message_with_cr)
+            await stdio_transport.write_msg(message_with_cr)
 
-        # Should not write anything
-        mock_stdout.write.assert_not_called()
-
-    async def test__write_msg_rejects_embedded_crlf(self):
+    async def test__write_msg_rejects_embedded_crlf(self, stdio_transport: StdioTransport[Any], mock_stdout: AsyncMock):
         """Test _write_msg rejects messages with embedded CRLF sequences per MCP spec."""
-        mock_stdout = AsyncMock()
-
         message_with_crlf = '{"jsonrpc":"2.0",\r\n"id":1}'
 
         with pytest.raises(ValueError, match="Messages MUST NOT contain embedded newlines"):
-            await stdio._write_msg(mock_stdout, message_with_crlf)
+            await stdio_transport.write_msg(message_with_crlf)
 
         # Should not write anything
         mock_stdout.write.assert_not_called()
 
-    async def test__write_msg_accepts_message_without_embedded_newlines(self):
+    async def test__write_msg_accepts_message_without_embedded_newlines(
+        self, stdio_transport: StdioTransport[Any], mock_stdout: AsyncMock
+    ):
         """Test _write_msg accepts valid messages without embedded newlines."""
-        mock_stdout = AsyncMock()
-
         valid_message = '{"jsonrpc":"2.0","id":1,"method":"test","params":{"key":"value"}}'
-        await stdio._write_msg(mock_stdout, valid_message)
+
+        await stdio_transport.write_msg(valid_message)
 
         # Should write message with trailing newline
         mock_stdout.write.assert_called_once_with(valid_message + "\n")
 
 
-class TestHandleMessage:
-    """Test suite for _handle_message internal function."""
+class TestDispatch:
+    """Test suite for dispatch function."""
 
-    async def test_handle_message_with_valid_input(self):
-        """Test _handle_message processes valid input."""
+    async def test_dispatch_with_valid_input(self, stdio_transport: StdioTransport[Any], mock_stdout: AsyncMock):
+        """Test dispatch processes valid input."""
         handler = AsyncMock(return_value='{"result":"success"}')
-        mock_write = AsyncMock()
+        stdio_transport.minimcp.handle = handler
 
-        # _handle_message receives already-stripped line from transport()
-        await stdio._handle_message(handler, '{"jsonrpc":"2.0","method":"test"}', mock_write)
+        # dispatch receives already-stripped line from transport()
+        await stdio_transport.dispatch('{"jsonrpc":"2.0","method":"test"}')
 
         # Handler should be called with line and write callback
         handler.assert_called_once()
@@ -97,54 +94,57 @@ class TestHandleMessage:
         assert callable(call_args[1])
 
         # Response should be written
-        mock_write.assert_called_once_with('{"result":"success"}')
+        mock_stdout.write.assert_called_once_with('{"result":"success"}\n')
 
-    async def test_handle_message_passes_line_as_is(self):
-        """Test _handle_message passes line to handler as-is."""
+    async def test_dispatch_passes_line_as_is(self, stdio_transport: StdioTransport[Any]):
+        """Test dispatch passes line to handler as-is."""
         handler = AsyncMock(return_value='{"result":"ok"}')
-        mock_write = AsyncMock()
+        stdio_transport.minimcp.handle = handler
 
-        # The transport() strips, but _handle_message doesn't
+        # The transport() strips, but dispatch doesn't
         test_line = '{"test":1}'
-        await stdio._handle_message(handler, test_line, mock_write)
+        await stdio_transport.dispatch(test_line)
 
         # Line should be passed as-is
         call_args = handler.call_args[0]
         assert call_args[0] == test_line
 
-    async def test_handle_message_always_calls_handler(self):
-        """Test _handle_message always calls handler (empty check is in transport)."""
+    async def test_dispatch_always_calls_handler(self, stdio_transport: StdioTransport[Any]):
+        """Test dispatch always calls handler (empty check is in transport)."""
         handler = AsyncMock(return_value='{"ok":true}')
-        mock_write = AsyncMock()
+        stdio_transport.minimcp.handle = handler
 
-        # _handle_message doesn't check for empty - that's in transport()
-        await stdio._handle_message(handler, "test", mock_write)
+        # dispatch doesn't check for empty - that's in transport()
+        await stdio_transport.dispatch("test")
 
         # Handler should be called
         handler.assert_called_once()
 
-    async def test_handle_message_with_no_message_response(self):
-        """Test _handle_message handles NoMessage return."""
+    async def test_dispatch_with_non_message_response(
+        self, stdio_transport: StdioTransport[Any], mock_stdout: AsyncMock
+    ):
+        """Test dispatch handles NoMessage return."""
         handler = AsyncMock(return_value=NoMessage.NOTIFICATION)
-        mock_write = AsyncMock()
+        stdio_transport.minimcp.handle = handler
 
-        await stdio._handle_message(handler, '{"method":"notify"}', mock_write)
+        await stdio_transport.dispatch('{"method":"notify"}')
 
         # Handler should be called
         handler.assert_called_once()
 
         # write should NOT be called for NoMessage (checked with isinstance)
-        mock_write.assert_not_called()
+        mock_stdout.write.assert_not_called()
 
 
-class TestStdioTransport:
+class TestStart:
     """Test suite for stdio transport function."""
 
-    async def test_transport_relays_single_message(self):
+    async def test_start_relays_single_message(
+        self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
+    ):
         """Test transport relays a single message through handler."""
         # Create mock stdin with one message
         input_message = '{"jsonrpc":"2.0","id":1,"method":"test"}\n'
-        mock_stdin = AsyncMock()
         mock_stdin.__aiter__.return_value = iter([input_message])
 
         # Create handler that echoes back
@@ -155,9 +155,9 @@ class TestStdioTransport:
             response: str = f'{{"echo":"{message}"}}'
             return response
 
-        mock_stdout = AsyncMock()
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=echo_handler)
 
-        await stdio.transport(echo_handler, stdin=mock_stdin, stdout=mock_stdout)
+        await stdio_transport.start()
 
         # Handler should have received the message
         assert len(received_messages) == 1
@@ -166,14 +166,15 @@ class TestStdioTransport:
         # Response should be written to stdout
         assert mock_stdout.write.call_count >= 1
 
-    async def test_transport_relays_multiple_messages(self):
+    async def test_start_relays_multiple_messages(
+        self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
+    ):
         """Test transport relays multiple messages."""
         input_messages = [
             '{"jsonrpc":"2.0","id":1,"method":"test1"}\n',
             '{"jsonrpc":"2.0","id":2,"method":"test2"}\n',
             '{"jsonrpc":"2.0","id":3,"method":"test3"}\n',
         ]
-        mock_stdin = AsyncMock()
         mock_stdin.__aiter__.return_value = iter(input_messages)
 
         received_messages: list[str] = []
@@ -182,9 +183,9 @@ class TestStdioTransport:
             received_messages.append(message)
             return f'{{"id":{len(received_messages)}}}'
 
-        mock_stdout = AsyncMock()
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=collecting_handler)
 
-        await stdio.transport(collecting_handler, stdin=mock_stdin, stdout=mock_stdout)
+        await stdio_transport.start()
 
         # All messages should be received
         assert len(received_messages) == 3
@@ -192,10 +193,11 @@ class TestStdioTransport:
         assert '{"jsonrpc":"2.0","id":2,"method":"test2"}' in received_messages
         assert '{"jsonrpc":"2.0","id":3,"method":"test3"}' in received_messages
 
-    async def test_transport_handler_can_use_send_callback(self):
+    async def test_transport_handler_can_use_send_callback(
+        self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
+    ):
         """Test handler can use send callback to write intermediate messages."""
         input_message = '{"jsonrpc":"2.0","id":1,"method":"test"}\n'
-        mock_stdin = AsyncMock()
         mock_stdin.__aiter__.return_value = iter([input_message])
 
         sent_messages: list[str] = []
@@ -207,16 +209,18 @@ class TestStdioTransport:
             # Return final response
             return '{"result":"done"}'
 
-        mock_stdout = AsyncMock()
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=handler_with_callback)
 
-        await stdio.transport(handler_with_callback, stdin=mock_stdin, stdout=mock_stdout)
+        await stdio_transport.start()
 
         # Handler should have sent intermediate message
         assert len(sent_messages) == 1
         # stdout.write should be called for both intermediate and final
         assert mock_stdout.write.call_count >= 2
 
-    async def test_transport_skips_empty_lines(self):
+    async def test_transport_skips_empty_lines(
+        self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
+    ):
         """Test transport skips empty lines."""
         input_messages = [
             '{"jsonrpc":"2.0","id":1,"method":"test"}\n',
@@ -224,7 +228,6 @@ class TestStdioTransport:
             "\n",  # Just newline
             '{"jsonrpc":"2.0","id":2,"method":"test2"}\n',
         ]
-        mock_stdin = AsyncMock()
         mock_stdin.__aiter__.return_value = iter(input_messages)
 
         received_messages: list[str] = []
@@ -233,23 +236,23 @@ class TestStdioTransport:
             received_messages.append(message)
             return '{"ok":true}'
 
-        mock_stdout = AsyncMock()
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=collecting_handler)
 
-        await stdio.transport(collecting_handler, stdin=mock_stdin, stdout=mock_stdout)
+        await stdio_transport.start()
 
         # Only non-empty messages should be received
         assert len(received_messages) == 2
 
-    async def test_transport_concurrent_message_handling(self):
+    async def test_transport_concurrent_message_handling(
+        self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
+    ):
         """Test transport handles messages concurrently."""
-        import anyio
 
         # Messages that will be processed
         input_messages = [
             '{"jsonrpc":"2.0","id":1,"method":"slow"}\n',
             '{"jsonrpc":"2.0","id":2,"method":"fast"}\n',
         ]
-        mock_stdin = AsyncMock()
         mock_stdin.__aiter__.return_value = iter(input_messages)
 
         completed_order: list[str] = []
@@ -262,9 +265,9 @@ class TestStdioTransport:
             completed_order.append(msg_id)
             return f'{{"id":{msg_id}}}'
 
-        mock_stdout = AsyncMock()
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=concurrent_handler)
 
-        await stdio.transport(concurrent_handler, stdin=mock_stdin, stdout=mock_stdout)
+        await stdio_transport.start()
 
         # Fast message should complete before slow message
         assert len(completed_order) == 2
@@ -272,98 +275,21 @@ class TestStdioTransport:
         assert completed_order[0] == "2"
         assert completed_order[1] == "1"
 
-    async def test_transport_handler_returns_no_message(self):
+    async def test_transport_handler_returns_no_message(
+        self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
+    ):
         """Test transport handles NoMessage return from handler."""
         input_message = '{"jsonrpc":"2.0","method":"notify"}\n'
-        mock_stdin = AsyncMock()
         mock_stdin.__aiter__.return_value = iter([input_message])
 
         async def notification_handler(message: str, send: Send):
             # Return NoMessage for notifications
             return NoMessage.NOTIFICATION
 
-        mock_stdout = AsyncMock()
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=notification_handler)
 
-        await stdio.transport(notification_handler, stdin=mock_stdin, stdout=mock_stdout)
+        await stdio_transport.start()
 
         # write should not be called for NoMessage
-        # (_handle_message checks isinstance and skips)
+        # (dispatch checks isinstance and skips)
         assert mock_stdout.write.call_count == 0
-
-
-class TestStdioTransportSimple:
-    """Simplified test suite for stdio transport (legacy tests)."""
-
-    def test_stdio_transport_function_exists(self):
-        """Test that stdio.transport function exists and is callable."""
-        assert callable(stdio.transport)
-
-        # Check function signature
-        import inspect
-
-        sig = inspect.signature(stdio.transport)
-        assert len(sig.parameters) == 3
-        assert "handler" in sig.parameters
-        assert "stdin" in sig.parameters
-        assert "stdout" in sig.parameters
-
-    def test_stdio_transport_is_async(self):
-        """Test that stdio.transport is an async function."""
-        import inspect
-
-        assert inspect.iscoroutinefunction(stdio.transport)
-
-    def test_imports_available(self):
-        """Test that all required imports are available."""
-        # Test that we can import everything the module needs
-        import sys
-        from io import TextIOWrapper
-
-        import anyio
-
-        from mcp.server.minimcp.types import Message, NoMessage, Send
-
-        # All imports should be successful
-        assert sys is not None
-        assert anyio is not None
-        assert TextIOWrapper is not None
-        assert Message is not None
-        assert NoMessage is not None
-        assert Send is not None
-
-    def test_no_message_enum_values(self):
-        """Test NoMessage enum values are available."""
-        # These are used in the stdio transport
-        assert hasattr(NoMessage, "NOTIFICATION")
-        assert isinstance(NoMessage.NOTIFICATION, NoMessage)
-
-    def test_function_docstring(self):
-        """Test that the function has proper documentation."""
-        assert stdio.transport.__doc__ is not None
-        assert "stdio transport" in stdio.transport.__doc__
-        assert "handler" in stdio.transport.__doc__
-
-    def test_module_level_logger(self):
-        """Test that the module has a logger configured."""
-        from mcp.server.minimcp.transports import stdio
-
-        assert hasattr(stdio, "logger")
-        assert stdio.logger.name == "mcp.server.minimcp.transports.stdio"
-
-    async def test_stdio_transport_requires_handler(self):
-        """Test that stdio.transport requires a handler parameter."""
-        # This should raise TypeError if called without handler
-        with pytest.raises(TypeError):
-            await stdio.transport()  # type: ignore
-
-    def test_anyio_dependencies(self):
-        """Test that anyio functions used in stdio transport are available."""
-        import anyio
-
-        # Functions used in the stdio transport
-        assert hasattr(anyio, "wrap_file")
-        assert hasattr(anyio, "create_task_group")
-
-        # These should be callable
-        assert callable(anyio.wrap_file)
-        assert callable(anyio.create_task_group)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import anyio
 
-from mcp.server.minimcp.transports import stdio
+from mcp.server.minimcp import StdioTransport
 
 # Add the current directory to Python path to import math_mcp
 current_dir = Path(__file__).parent
@@ -25,8 +25,11 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Main entry point for the test math server"""
-    logger.info("Test MiniMCP: Started stdio server, listening for messages...")
-    anyio.run(stdio.transport, math_mcp.handle)
+
+    logger.info("Test MiniMCP: Starting stdio server, listening for messages...")
+
+    transport = StdioTransport[None](math_mcp)
+    anyio.run(transport.start)
 
 
 if __name__ == "__main__":
