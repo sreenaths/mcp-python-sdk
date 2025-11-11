@@ -44,8 +44,6 @@ class StdioTransport(BaseTransport[ScopeT]):
     - Exceptions are formatted as standard MCP errors, and shouldn't cause the transport to terminate
     """
 
-    minimcp: MiniMCP[ScopeT]
-
     stdin: anyio.AsyncFile[str]
     stdout: anyio.AsyncFile[str]
 
@@ -55,7 +53,7 @@ class StdioTransport(BaseTransport[ScopeT]):
         stdin: anyio.AsyncFile[str] | None = None,
         stdout: anyio.AsyncFile[str] | None = None,
     ) -> None:
-        self.minimcp = minimcp
+        super().__init__(minimcp)
 
         self.stdin = stdin or anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))
         self.stdout = stdout or anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True))
