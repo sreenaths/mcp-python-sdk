@@ -11,6 +11,16 @@ from inline_snapshot import Is, snapshot
 from pydantic import AnyHttpUrl, AnyUrl
 
 from mcp.client.auth import OAuthClientProvider, PKCEParameters
+from mcp.client.auth.utils import (
+    build_protected_resource_discovery_urls,
+    create_oauth_metadata_request,
+    extract_field_from_www_auth,
+    extract_resource_metadata_from_www_auth,
+    extract_scope_from_www_auth,
+    get_client_metadata_scopes,
+    get_discovery_urls,
+    handle_registration_response,
+)
 from mcp.shared.auth import OAuthClientInformationFull, OAuthClientMetadata, OAuthToken, ProtectedResourceMetadata
 
 
@@ -265,7 +275,9 @@ class TestOAuthFlow:
             status_code=401, headers={}, request=httpx.Request("GET", "https://request-api.example.com")
         )
 
-        urls = provider._build_protected_resource_discovery_urls(init_response)
+        urls = build_protected_resource_discovery_urls(
+            extract_resource_metadata_from_www_auth(init_response), provider.context.server_url
+        )
         assert len(urls) == 1
         assert urls[0] == "https://api.example.com/.well-known/oauth-protected-resource"
 
@@ -274,7 +286,9 @@ class TestOAuthFlow:
             'Bearer resource_metadata="https://prm.example.com/.well-known/oauth-protected-resource/path"'
         )
 
-        urls = provider._build_protected_resource_discovery_urls(init_response)
+        urls = build_protected_resource_discovery_urls(
+            extract_resource_metadata_from_www_auth(init_response), provider.context.server_url
+        )
         assert len(urls) == 2
         assert urls[0] == "https://prm.example.com/.well-known/oauth-protected-resource/path"
         assert urls[1] == "https://api.example.com/.well-known/oauth-protected-resource"
@@ -282,7 +296,7 @@ class TestOAuthFlow:
     @pytest.mark.anyio
     def test_create_oauth_metadata_request(self, oauth_provider: OAuthClientProvider):
         """Test OAuth metadata discovery request building."""
-        request = oauth_provider._create_oauth_metadata_request("https://example.com")
+        request = create_oauth_metadata_request("https://example.com")
 
         # Ensure correct method and headers, and that the URL is unmodified
         assert request.method == "GET"
@@ -296,7 +310,7 @@ class TestOAuthFallback:
     @pytest.mark.anyio
     async def test_oauth_discovery_fallback_order(self, oauth_provider: OAuthClientProvider):
         """Test fallback URL construction order."""
-        discovery_urls = oauth_provider._get_discovery_urls()
+        discovery_urls = get_discovery_urls(oauth_provider.context.auth_server_url or oauth_provider.context.server_url)
 
         assert discovery_urls == [
             "https://api.example.com/.well-known/oauth-authorization-server/v1/mcp",
@@ -450,10 +464,13 @@ class TestOAuthFallback:
         await oauth_provider._handle_protected_resource_response(prm_metadata_response)
 
         # Process the scope selection with WWW-Authenticate header
-        oauth_provider._select_scopes(init_response_with_www_auth_scope)
+        scopes = get_client_metadata_scopes(
+            extract_scope_from_www_auth(init_response_with_www_auth_scope),
+            oauth_provider.context.protected_resource_metadata,
+        )
 
         # Verify that WWW-Authenticate scope is used (not PRM scopes)
-        assert oauth_provider.context.client_metadata.scope == "special:scope from:www-authenticate"
+        assert scopes == "special:scope from:www-authenticate"
 
     @pytest.mark.anyio
     async def test_prioritize_prm_scopes_when_no_www_auth_scope(
@@ -467,10 +484,13 @@ class TestOAuthFallback:
         await oauth_provider._handle_protected_resource_response(prm_metadata_response)
 
         # Process the scope selection without WWW-Authenticate scope
-        oauth_provider._select_scopes(init_response_without_www_auth_scope)
+        scopes = get_client_metadata_scopes(
+            extract_scope_from_www_auth(init_response_without_www_auth_scope),
+            oauth_provider.context.protected_resource_metadata,
+        )
 
         # Verify that PRM scopes are used
-        assert oauth_provider.context.client_metadata.scope == "resource:read resource:write"
+        assert scopes == "resource:read resource:write"
 
     @pytest.mark.anyio
     async def test_omit_scope_when_no_prm_scopes_or_www_auth(
@@ -484,10 +504,12 @@ class TestOAuthFallback:
         await oauth_provider._handle_protected_resource_response(prm_metadata_without_scopes_response)
 
         # Process the scope selection without WWW-Authenticate scope
-        oauth_provider._select_scopes(init_response_without_www_auth_scope)
-
+        scopes = get_client_metadata_scopes(
+            extract_scope_from_www_auth(init_response_without_www_auth_scope),
+            oauth_provider.context.protected_resource_metadata,
+        )
         # Verify that scope is omitted
-        assert oauth_provider.context.client_metadata.scope is None
+        assert scopes is None
 
     @pytest.mark.anyio
     async def test_register_client_request(self, oauth_provider: OAuthClientProvider):
@@ -647,7 +669,7 @@ class TestRegistrationResponse:
     """Test client registration response handling."""
 
     @pytest.mark.anyio
-    async def test_handle_registration_response_reads_before_accessing_text(self, oauth_provider: OAuthClientProvider):
+    async def test_handle_registration_response_reads_before_accessing_text(self):
         """Test that response.aread() is called before accessing response.text."""
 
         # Track if aread() was called
@@ -663,15 +685,15 @@ class TestRegistrationResponse:
 
             @property
             def text(self):
-                if not self._aread_called:  # pragma: no cover
-                    raise RuntimeError("Response.text accessed before response.aread()")
+                if not self._aread_called:
+                    raise RuntimeError("Response.text accessed before response.aread()")  # pragma: no cover
                 return self._text
 
         mock_response = MockResponse()
 
         # This should call aread() before accessing text
         with pytest.raises(Exception) as exc_info:
-            await oauth_provider._handle_registration_response(mock_response)
+            await handle_registration_response(mock_response)
 
         # Verify aread() was called
         assert mock_response._aread_called
@@ -846,14 +868,14 @@ class TestAuthFlow:
         # In the buggy version, this would yield the request AGAIN unconditionally
         # In the fixed version, this should end the generator
         try:
-            await auth_flow.asend(response)  # extra request  # pragma: no cover
+            await auth_flow.asend(response)  # extra request
             request_yields += 1  # pragma: no cover
-            # If we reach here, the bug is present  # pragma: no cover
-            pytest.fail(  # pragma: no cover
+            # If we reach here, the bug is present
+            pytest.fail(
                 f"Unnecessary retry detected! Request was yielded {request_yields} times. "
                 f"This indicates the retry logic bug that caused 2x performance degradation. "
                 f"The request should only be yielded once for successful responses."
-            )
+            )  # pragma: no cover
         except StopAsyncIteration:
             # This is the expected behavior - no unnecessary retry
             pass
@@ -1062,7 +1084,9 @@ class TestSEP985Discovery:
         )
 
         # Build discovery URLs
-        discovery_urls = provider._build_protected_resource_discovery_urls(init_response)
+        discovery_urls = build_protected_resource_discovery_urls(
+            extract_resource_metadata_from_www_auth(init_response), provider.context.server_url
+        )
 
         # Should have path-based URL first, then root-based URL
         assert len(discovery_urls) == 2
@@ -1167,7 +1191,7 @@ class TestSEP985Discovery:
         final_response = httpx.Response(200, request=final_request)
         try:
             await auth_flow.asend(final_response)
-        except StopAsyncIteration:
+        except StopAsyncIteration:  # pragma: no cover
             pass
 
     @pytest.mark.anyio
@@ -1200,7 +1224,9 @@ class TestSEP985Discovery:
         )
 
         # Build discovery URLs
-        discovery_urls = provider._build_protected_resource_discovery_urls(init_response)
+        discovery_urls = build_protected_resource_discovery_urls(
+            extract_resource_metadata_from_www_auth(init_response), provider.context.server_url
+        )
 
         # Should have WWW-Authenticate URL first, then fallback URLs
         assert len(discovery_urls) == 3
@@ -1268,27 +1294,13 @@ class TestWWWAuthenticate:
     ):
         """Test extraction of various fields from valid WWW-Authenticate headers."""
 
-        async def redirect_handler(url: str) -> None:
-            pass  # pragma: no cover
-
-        async def callback_handler() -> tuple[str, str | None]:
-            return "test_auth_code", "test_state"  # pragma: no cover
-
-        provider = OAuthClientProvider(
-            server_url="https://api.example.com/v1/mcp",
-            client_metadata=client_metadata,
-            storage=mock_storage,
-            redirect_handler=redirect_handler,
-            callback_handler=callback_handler,
-        )
-
         init_response = httpx.Response(
             status_code=401,
             headers={"WWW-Authenticate": www_auth_header},
             request=httpx.Request("GET", "https://api.example.com/test"),
         )
 
-        result = provider._extract_field_from_www_auth(init_response, field_name)
+        result = extract_field_from_www_auth(init_response, field_name)
         assert result == expected_value
 
     @pytest.mark.parametrize(
@@ -1316,24 +1328,10 @@ class TestWWWAuthenticate:
     ):
         """Test extraction returns None for invalid cases."""
 
-        async def redirect_handler(url: str) -> None:
-            pass  # pragma: no cover
-
-        async def callback_handler() -> tuple[str, str | None]:
-            return "test_auth_code", "test_state"  # pragma: no cover
-
-        provider = OAuthClientProvider(
-            server_url="https://api.example.com/v1/mcp",
-            client_metadata=client_metadata,
-            storage=mock_storage,
-            redirect_handler=redirect_handler,
-            callback_handler=callback_handler,
-        )
-
         headers = {"WWW-Authenticate": www_auth_header} if www_auth_header is not None else {}
         init_response = httpx.Response(
             status_code=401, headers=headers, request=httpx.Request("GET", "https://api.example.com/test")
         )
 
-        result = provider._extract_field_from_www_auth(init_response, field_name)
+        result = extract_field_from_www_auth(init_response, field_name)
         assert result is None, f"Should return None for {description}"
