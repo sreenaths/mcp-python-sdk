@@ -3,19 +3,20 @@ import sys
 from typing import Any
 
 import anyio
-from fastapi import FastAPI, Request
+from anyio.streams.memory import MemoryObjectReceiveStream
+from fastapi import FastAPI, Request, Response
 from pydantic import Field
+from sse_starlette.sse import EventSourceResponse
 
-from mcp.server.minimcp import MiniMCP, starlette
+from mcp.server.minimcp import MiniMCP, StreamableHTTPTransport
 
 # Configure logging globally for the demo server
 logging.basicConfig(level=logging.DEBUG, stream=sys.stdout)
 logger = logging.getLogger(__name__)
 
-
-app = FastAPI()
-
 math_mcp = MiniMCP[Any](name="MathServer - Streamable HTTP", version="0.1.0")
+transport = StreamableHTTPTransport[None](math_mcp)
+app = FastAPI(lifespan=transport.lifespan)
 
 
 @math_mcp.tool(description="Add two numbers")
@@ -41,4 +42,8 @@ def subtract(
 
 @app.post("/mcp")
 async def handle_mcp_request(request: Request):
-    return await starlette.streamable_http_transport(math_mcp.handle, request)
+    msg = (await request.body()).decode("utf-8")
+    result = await transport.dispatch(request.method, request.headers, msg)
+    if isinstance(result.content, MemoryObjectReceiveStream):
+        return EventSourceResponse(result.content, headers=result.headers, ping=15)
+    return Response(result.content, result.status_code, result.headers, result.media_type)

@@ -1,6 +1,7 @@
 import logging
 import sys
 from io import TextIOWrapper
+from typing import Generic
 
 import anyio
 import anyio.lowlevel
@@ -10,13 +11,12 @@ from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.transports.base_transport import BaseTransport
 from mcp.server.minimcp.types import Message, NoMessage
 
 logger = logging.getLogger(__name__)
 
 
-class StdioTransport(BaseTransport[ScopeT]):
+class StdioTransport(Generic[ScopeT]):
     """stdio transport implementation per MCP specification.
     https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#stdio
 
@@ -44,6 +44,8 @@ class StdioTransport(BaseTransport[ScopeT]):
     - Exceptions are formatted as standard MCP errors, and shouldn't cause the transport to terminate
     """
 
+    minimcp: MiniMCP[ScopeT]
+
     stdin: anyio.AsyncFile[str]
     stdout: anyio.AsyncFile[str]
 
@@ -53,7 +55,7 @@ class StdioTransport(BaseTransport[ScopeT]):
         stdin: anyio.AsyncFile[str] | None = None,
         stdout: anyio.AsyncFile[str] | None = None,
     ) -> None:
-        super().__init__(minimcp)
+        self.minimcp = minimcp
 
         self.stdin = stdin or anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))
         self.stdout = stdout or anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True))
@@ -88,9 +90,7 @@ class StdioTransport(BaseTransport[ScopeT]):
         response: Message | NoMessage | None = None
 
         try:
-            logger.debug("Handling incoming message: %s", received_msg)
             response = await self.minimcp.handle(received_msg, self.write_msg)
-            logger.debug("Handling completed. Response: %s", response)
         except InvalidMessageError as e:
             response = e.response
         except Exception as e:
@@ -105,7 +105,7 @@ class StdioTransport(BaseTransport[ScopeT]):
         if isinstance(response, Message):
             await self.write_msg(response)
 
-    async def start(self) -> None:
+    async def run(self) -> None:
         """
         Start the stdio transport.
         This will read messages from stdin and dispatch them to the MiniMCP instance, and write

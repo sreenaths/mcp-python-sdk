@@ -3,7 +3,7 @@ import os
 
 import anyio
 
-from mcp.server.minimcp import Message, stdio
+from mcp.server.minimcp import Message, StdioTransport
 from mcp.server.minimcp.types import Send
 
 from .math_mcp import math_mcp
@@ -31,6 +31,11 @@ async def custom_handler(message: Message, send: Send):
         # You could do teardown (like closing connections, etc) here.
 
 
-if __name__ == "__main__":
+def main():
     logger.info("MiniMCP: Started stdio server with custom handler, listening for messages...")
-    anyio.run(stdio.transport, custom_handler)
+    transport = StdioTransport[None](math_mcp)
+    anyio.run(transport.run)
+
+
+if __name__ == "__main__":
+    main()

@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 ScopeT = TypeVar("ScopeT", bound=object)
 
 
-@dataclass
+@dataclass(slots=True)
 class Context(Generic[ScopeT]):
     """
     Context object holds request metadata available to message handlers.

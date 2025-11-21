@@ -29,7 +29,7 @@ def main():
     logger.info("Test MiniMCP: Starting stdio server, listening for messages...")
 
     transport = StdioTransport[None](math_mcp)
-    anyio.run(transport.start)
+    anyio.run(transport.run)
 
 
 if __name__ == "__main__":

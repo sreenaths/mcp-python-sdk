@@ -136,10 +136,10 @@ class TestDispatch:
         mock_stdout.write.assert_not_called()
 
 
-class TestStart:
+class TestRun:
     """Test suite for stdio transport function."""
 
-    async def test_start_relays_single_message(
+    async def test_run_relays_single_message(
         self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
     ):
         """Test transport relays a single message through handler."""
@@ -157,7 +157,7 @@ class TestStart:
 
         stdio_transport.minimcp.handle = AsyncMock(side_effect=echo_handler)
 
-        await stdio_transport.start()
+        await stdio_transport.run()
 
         # Handler should have received the message
         assert len(received_messages) == 1
@@ -166,7 +166,7 @@ class TestStart:
         # Response should be written to stdout
         assert mock_stdout.write.call_count >= 1
 
-    async def test_start_relays_multiple_messages(
+    async def test_run_relays_multiple_messages(
         self, stdio_transport: StdioTransport[Any], mock_stdin: AsyncMock, mock_stdout: AsyncMock
     ):
         """Test transport relays multiple messages."""
@@ -185,7 +185,7 @@ class TestStart:
 
         stdio_transport.minimcp.handle = AsyncMock(side_effect=collecting_handler)
 
-        await stdio_transport.start()
+        await stdio_transport.run()
 
         # All messages should be received
         assert len(received_messages) == 3
@@ -211,7 +211,7 @@ class TestStart:
 
         stdio_transport.minimcp.handle = AsyncMock(side_effect=handler_with_callback)
 
-        await stdio_transport.start()
+        await stdio_transport.run()
 
         # Handler should have sent intermediate message
         assert len(sent_messages) == 1
@@ -238,7 +238,7 @@ class TestStart:
 
         stdio_transport.minimcp.handle = AsyncMock(side_effect=collecting_handler)
 
-        await stdio_transport.start()
+        await stdio_transport.run()
 
         # Only non-empty messages should be received
         assert len(received_messages) == 2
@@ -267,7 +267,7 @@ class TestStart:
 
         stdio_transport.minimcp.handle = AsyncMock(side_effect=concurrent_handler)
 
-        await stdio_transport.start()
+        await stdio_transport.run()
 
         # Fast message should complete before slow message
         assert len(completed_order) == 2
@@ -288,7 +288,7 @@ class TestStart:
 
         stdio_transport.minimcp.handle = AsyncMock(side_effect=notification_handler)
 
-        await stdio_transport.start()
+        await stdio_transport.run()
 
         # write should not be called for NoMessage
         # (dispatch checks isinstance and skips)

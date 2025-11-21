@@ -365,9 +365,9 @@ class TestHttpServer:
         )
 
         # Should not fail due to extra fields
-        assert response.status_code == 200
         response_data = response.json()
         assert "result" in response_data
+        assert response.status_code == 200
 
     async def test_malformed_json_cases(self, http_client: AsyncClient):
         """Test various malformed JSON cases."""

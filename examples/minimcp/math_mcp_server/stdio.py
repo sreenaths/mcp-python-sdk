@@ -3,7 +3,7 @@ import os
 
 import anyio
 
-from mcp.server.minimcp import stdio
+from mcp.server.minimcp import StdioTransport
 
 from .math_mcp import math_mcp
 
@@ -21,4 +21,5 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     logger.info("MiniMCP: Started stdio server, listening for messages...")
-    anyio.run(stdio.transport, math_mcp.handle)
+    transport = StdioTransport[None](math_mcp)
+    anyio.run(transport.run)

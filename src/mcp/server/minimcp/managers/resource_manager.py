@@ -2,8 +2,7 @@ import builtins
 import logging
 import re
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 import pydantic_core
 from pydantic import AnyUrl
@@ -45,8 +44,7 @@ class ResourceDefinition(TypedDict, total=False):
     meta: dict[str, Any] | None
 
 
-@dataclass
-class _ResourceDetails:
+class _ResourceDetails(NamedTuple):
     """
     Internal container for resource registration details.
 

@@ -1,50 +1,113 @@
 import logging
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from http import HTTPStatus
+from typing import Generic
 
-from mcp import types
+import mcp.types as types
 from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
-from mcp.server.minimcp.transports.http_transport_base import CONTENT_TYPE_JSON, HTTPResult, HTTPTransportBase
-from mcp.server.minimcp.types import Message, NoMessage
-
-HTTPRequestHandler = Callable[[Message], Awaitable[Message | NoMessage]]
+from mcp.server.minimcp.managers.context_manager import ScopeT
+from mcp.server.minimcp.minimcp import MiniMCP
+from mcp.server.minimcp.types import MCPHTTPResponse, NoMessage
+from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 logger = logging.getLogger(__name__)
 
 
-class HTTPTransport(HTTPTransportBase):
+# RequestValidationError is raised and handled inside the HTTP transport layer,
+# hence not adding it to exceptions.py
+class RequestValidationError(Exception):
+    """
+    Exception raised when an error occurs in the HTTP transport.
+
+    Attributes:
+        message: The error message.
+        status_code: The HTTP status code to return to the client.
+    """
+
+    status_code: HTTPStatus
+
+    def __init__(self, message: str, status_code: HTTPStatus):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
+
+CONTENT_TYPE_JSON = "application/json"
+
+
+class HTTPTransport(Generic[ScopeT]):
+    """
+    HTTP transport implementations for MiniMCP.
+
+    Provides handling of HTTP requests by the MiniMCP server, including header validation,
+    content type checking, protocol version validation, and error response generation.
+    """
+
+    minimcp: MiniMCP[ScopeT]
+    RESPONSE_CONTENT_TYPES: frozenset[str] = frozenset[str]([CONTENT_TYPE_JSON])
+
+    def __init__(self, minimcp: MiniMCP[ScopeT]) -> None:
+        self.minimcp = minimcp
+
     async def dispatch(
-        self, handler: HTTPRequestHandler, method: str, headers: Mapping[str, str], body: str
-    ) -> HTTPResult:
+        self, method: str, headers: Mapping[str, str], body: str, scope: ScopeT | None = None
+    ) -> MCPHTTPResponse:
+        """
+        Dispatch an HTTP request to the MiniMCP server.
+        """
+
+        logger.debug("Handling HTTP request. Method: %s, Headers: %s", method, headers)
+
         if method == "POST":
-            return await self._handle_post_request(handler, headers, body)
+            return await self._handle_post_request(headers, body, scope)
         else:
             return self._handle_unsupported_request({"POST"})
 
     async def _handle_post_request(
-        self, handler: HTTPRequestHandler, headers: Mapping[str, str], body: str
-    ) -> HTTPResult:
-        logger.debug("Handling POST request. Headers: %s, Body: %s", headers, body)
+        self, headers: Mapping[str, str], body: str, scope: ScopeT | None
+    ) -> MCPHTTPResponse:
+        """
+        Handle a POST HTTP request.
+        It validates the request headers and body, and then passes on the message to the MiniMCP for handling.
 
-        if result := self._check_accept_headers(headers, {CONTENT_TYPE_JSON}):
-            return result
-        if result := self._check_content_type(headers):
-            return result
-        if result := self._validate_protocol_version(headers, body):
-            return result
+        Args:
+            headers: HTTP request headers.
+            body: HTTP request body.
+
+        Returns:
+            MCPHTTPResponse with the response from the MiniMCP server.
+        """
 
         try:
-            response = await handler(body)
+            # Validate the request headers and body
+            self._validate_accept_headers(headers)
+            self._validate_content_type(headers)
+            self._validate_protocol_version(headers, body)
 
+            # Handle the request
+            response = await self.minimcp.handle(body, scope=scope)
+
+            # Process the response
             if isinstance(response, NoMessage):
-                result = HTTPResult(HTTPStatus.ACCEPTED)
+                return MCPHTTPResponse(HTTPStatus.ACCEPTED)
             else:
-                result = HTTPResult(HTTPStatus.OK, response, CONTENT_TYPE_JSON)
+                return MCPHTTPResponse(HTTPStatus.OK, response, CONTENT_TYPE_JSON)
+
+        except RequestValidationError as e:
+            content, error_message = json_rpc.build_error_message(
+                e,
+                body,
+                types.INVALID_REQUEST,
+                include_stack_trace=True,
+            )
+            logger.error(error_message)
+            return MCPHTTPResponse(e.status_code, content, CONTENT_TYPE_JSON)
         except InvalidMessageError as e:
-            result = HTTPResult(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
+            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
         except Exception as e:
-            # Handler shouldn't raise any exceptions other than InvalidMessageError, so ideally we should not get here
+            # Handle shouldn't raise any exceptions other than InvalidMessageError, so ideally we should not get here
             response, error_message = json_rpc.build_error_message(
                 e,
                 body,
@@ -52,6 +115,106 @@ class HTTPTransport(HTTPTransportBase):
                 include_stack_trace=True,
             )
             logger.exception(f"Unexpected error in HTTP transport: {error_message}")
-            result = HTTPResult(HTTPStatus.BAD_REQUEST, response, CONTENT_TYPE_JSON)
 
-        return result
+            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, CONTENT_TYPE_JSON)
+
+    def _handle_unsupported_request(self, supported_methods: set[str]) -> MCPHTTPResponse:
+        """
+        Handle an HTTP request with an unsupported method.
+
+        Args:
+            supported_methods: Set of HTTP methods that are supported by the endpoint.
+
+        Returns:
+            MCPHTTPResponse with 405 METHOD_NOT_ALLOWED status and an Allow header
+            listing the supported methods.
+        """
+        headers = {
+            "Content-Type": CONTENT_TYPE_JSON,
+            "Allow": ", ".join(supported_methods),
+        }
+
+        return MCPHTTPResponse(HTTPStatus.METHOD_NOT_ALLOWED, headers=headers)
+
+    def _validate_accept_headers(self, headers: Mapping[str, str]) -> MCPHTTPResponse | None:
+        """
+        Validate that the client accepts the required content types.
+
+        Parses the Accept header and checks if all needed content types are present.
+
+        Args:
+            headers: HTTP request headers containing the Accept header.
+
+        Raises:
+            RequestValidationError: If the client doesn't accept all supported content types.
+        """
+        accept_header = headers.get("Accept", "")
+        accepted_types = [t.split(";")[0].strip().lower() for t in accept_header.split(",")]
+
+        if not self.RESPONSE_CONTENT_TYPES.issubset(accepted_types):
+            response_content_types_str = " and ".join(self.RESPONSE_CONTENT_TYPES)
+            raise RequestValidationError(
+                f"Not Acceptable: Client must accept {response_content_types_str}",
+                HTTPStatus.NOT_ACCEPTABLE,
+            )
+
+    def _validate_content_type(self, headers: Mapping[str, str]) -> MCPHTTPResponse | None:
+        """
+        Validate that the request Content-Type is application/json.
+
+        Extracts and validates the Content-Type header, ignoring any charset
+        or other parameters.
+
+        Args:
+            headers: HTTP request headers containing the Content-Type header.
+
+        Raises:
+            RequestValidationError: If the content type is not application/json.
+        """
+        content_type = headers.get("Content-Type", "")
+        content_type = content_type.split(";")[0].strip().lower()
+
+        if content_type != CONTENT_TYPE_JSON:
+            raise RequestValidationError(
+                "Unsupported Media Type: Content-Type must be " + CONTENT_TYPE_JSON,
+                HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+            )
+
+    def _validate_protocol_version(self, headers: Mapping[str, str], body: str) -> MCPHTTPResponse | None:
+        """
+        Validate the MCP protocol version from the request headers.
+
+        The protocol version is checked via the MCP-Protocol-Version header.
+        If not provided, a default version is assumed per the MCP specification.
+        Protocol version validation is skipped for the initialize request, as
+        version negotiation happens during initialization.
+
+        Args:
+            headers: HTTP request headers containing the protocol version header.
+            body: The request body, checked to determine if this is an initialize request.
+
+        Raises:
+            RequestValidationError: If the protocol version is unsupported.
+
+        See Also:
+            https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#protocol-version-header
+        """
+
+        if json_rpc.is_initialize_request(body):
+            # Ignore protocol version validation for initialize request
+            return None
+
+        # If no protocol version provided, assume default version as per the specification
+        # https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#protocol-version-header
+        protocol_version = headers.get(MCP_PROTOCOL_VERSION_HEADER, types.DEFAULT_NEGOTIATED_VERSION)
+
+        # Check if the protocol version is supported
+        if protocol_version not in SUPPORTED_PROTOCOL_VERSIONS:
+            supported_versions = ", ".join(SUPPORTED_PROTOCOL_VERSIONS)
+            raise RequestValidationError(
+                (
+                    f"Bad Request: Unsupported protocol version: {protocol_version}. "
+                    f"Supported versions: {supported_versions}"
+                ),
+                HTTPStatus.BAD_REQUEST,
+            )
