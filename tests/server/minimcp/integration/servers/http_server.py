@@ -18,7 +18,6 @@ from mcp.server.minimcp import HTTPTransport, StreamableHTTPTransport
 SERVER_HOST = os.environ.get("TEST_SERVER_HOST", "127.0.0.1")
 SERVER_PORT = int(os.environ.get("TEST_SERVER_PORT", "30789"))
 
-HEALTH_PATH = "/health"
 HTTP_MCP_PATH = "/http-mcp"
 STREAMABLE_HTTP_MCP_PATH = "/streamable-http-mcp"
 
@@ -44,12 +43,6 @@ http_transport = HTTPTransport[None](math_mcp)
 streamable_http_transport = StreamableHTTPTransport[None](math_mcp)
 
 app = FastAPI(lifespan=streamable_http_transport.lifespan)
-
-
-@app.get(HEALTH_PATH)
-async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok", "server": math_mcp.name}
 
 
 @app.post(HTTP_MCP_PATH)
