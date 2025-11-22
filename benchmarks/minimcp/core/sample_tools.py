@@ -10,7 +10,7 @@ from benchmarks.minimcp.core.memory_helpers import get_current_maxrss_kb, get_rs
 
 def compute_all_prime_factors(n: int) -> int:
     """
-    Count all the prime factors of n (with repetition) - A CPU-bound operation for benchmarking.
+    Count all the prime factors of n (with repetition) - A synchronous operation for benchmarking.
 
     Example: n=12 -> 2*2*3 -> returns 3
     """
@@ -41,12 +41,12 @@ def compute_all_prime_factors(n: int) -> int:
 
 
 async def async_compute_all_prime_factors(n: int) -> int:
-    """Async function with I/O and CPU-bound operations - realistic mixed workload."""
+    """Async function simulating I/O and synchronous operations - realistic mixed workload."""
 
     # Simulate fetching data from external source (e.g., database, API)
     await anyio.sleep(0.001)  # 1ms I/O simulation
 
-    # Do CPU-bound work with fetched data
+    # Do synchronous work with fetched data
     result = compute_all_prime_factors(n)
 
     # Simulate writing result or another I/O operation
