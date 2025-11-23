@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp.server.minimcp import MiniMCP
-from mcp.server.minimcp.transports.http import CONTENT_TYPE_JSON, HTTPTransport, RequestValidationError
+from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, RequestValidationError
 from mcp.server.minimcp.types import NoMessage
 
 pytestmark = pytest.mark.anyio
@@ -39,7 +39,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == '{"jsonrpc": "2.0", "result": "success", "id": 1}'
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
         mock_handler.assert_called_once_with(self.valid_body, scope=None)
 
     async def test_dispatch_unsupported_method(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
@@ -101,7 +101,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
         mock_handler.assert_called_once_with(self.valid_body, scope=None)
 
     async def test_dispatch_internal_error_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
@@ -113,7 +113,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_method_not_found_error(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling of method not found errors."""
@@ -126,7 +126,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_unknown_error_code(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling of unknown error codes."""
@@ -137,7 +137,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_malformed_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling of malformed JSON responses."""
@@ -148,7 +148,7 @@ class TestHTTPTransport:
         # Malformed JSON should result in 500 Internal Server Error
         assert result.status_code == HTTPStatus.OK
         assert result.content == "not valid json"
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_missing_headers(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling with minimal headers."""
@@ -251,7 +251,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == '{"jsonrpc": "2.0", "result": "success", "id": 1}'
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
         mock_handler.assert_called_once_with(self.valid_body, scope=None)
 
     async def test_response_without_id(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
@@ -269,7 +269,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == notification_response
-        assert result.media_type == CONTENT_TYPE_JSON
+        assert result.media_type == MEDIA_TYPE_JSON
 
     def test_validate_accept_headers_valid(self, transport: HTTPTransport[Any]):
         """Test validate accept headers with valid headers."""
@@ -392,14 +392,14 @@ class TestHTTPTransport:
     def test_multiple_needed_content_types(self, transport: HTTPTransport[Any]):
         """Test _validate_accept_headers with multiple needed content types."""
         headers = {"Accept": "application/json, text/event-stream"}
-        transport.RESPONSE_CONTENT_TYPES = frozenset[str]({"application/json", "text/event-stream"})
+        transport.RESPONSE_MEDIA_TYPES = frozenset[str]({"application/json", "text/event-stream"})
 
         transport._validate_accept_headers(headers)
 
     def test_partial_needed_content_types(self, transport: HTTPTransport[Any]):
         """Test _validate_accept_headers when only some needed types are accepted."""
         headers = {"Accept": "application/json"}
-        transport.RESPONSE_CONTENT_TYPES = frozenset[str]({"application/json", "text/event-stream"})
+        transport.RESPONSE_MEDIA_TYPES = frozenset[str]({"application/json", "text/event-stream"})
 
         with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_accept_headers(headers)

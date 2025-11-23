@@ -22,10 +22,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
     if server_is_running and not use_existing_minimcp_server:
         raise RuntimeError(
-            (
-                f"Server is already running at {BASE_URL}. "
-                "Run pytest with the --use-existing-minimcp-server option to use it."
-            )
+            f"Server is already running at {BASE_URL}. "
+            "Run pytest with the --use-existing-minimcp-server option to use it."
         )
 
 

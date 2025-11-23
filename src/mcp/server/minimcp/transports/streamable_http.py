@@ -7,37 +7,45 @@ from typing import Any
 
 import anyio
 from anyio.abc import TaskGroup, TaskStatus
+from anyio.streams.memory import MemoryObjectReceiveStream
+from sse_starlette.sse import EventSourceResponse
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Route
 from typing_extensions import override
 
 import mcp.types as types
 from mcp.server.minimcp import MiniMCP, json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError, MCPRuntimeError
 from mcp.server.minimcp.managers.context_manager import ScopeT
-from mcp.server.minimcp.transports.http import CONTENT_TYPE_JSON, HTTPTransport, RequestValidationError
+from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, RequestValidationError
 from mcp.server.minimcp.types import MCPHTTPResponse, Message, NoMessage
 
 logger = logging.getLogger(__name__)
 
 
-CONTENT_TYPE_SSE = "text/event-stream"
+MEDIA_TYPE_SSE = "text/event-stream"
+DEFAULT_PING_INTERVAL = 15  # Ping every 15 seconds to keep the connection alive. It's a widely adopted convention.
 
 SSE_HEADERS = {
     "Cache-Control": "no-cache, no-transform",
     "Connection": "keep-alive",
-    "Content-Type": CONTENT_TYPE_SSE,
+    "Content-Type": MEDIA_TYPE_SSE,
 }
 
 
 class StreamableHTTPTransport(HTTPTransport[ScopeT]):
-    minimcp: MiniMCP[ScopeT]
+    _ping: int
 
     _stack: AsyncExitStack
     _tg: TaskGroup | None
 
-    RESPONSE_CONTENT_TYPES: frozenset[str] = frozenset[str]([CONTENT_TYPE_JSON, CONTENT_TYPE_SSE])
+    RESPONSE_MEDIA_TYPES: frozenset[str] = frozenset[str]([MEDIA_TYPE_JSON, MEDIA_TYPE_SSE])
 
-    def __init__(self, minimcp: MiniMCP[ScopeT]) -> None:
-        self.minimcp = minimcp
+    def __init__(self, minimcp: MiniMCP[ScopeT], ping: int = DEFAULT_PING_INTERVAL) -> None:
+        super().__init__(minimcp)
+        self._ping = ping
 
         self._stack = AsyncExitStack()
         self._tg = None
@@ -59,6 +67,44 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
     async def lifespan(self, _: Any) -> AsyncGenerator[None, None]:
         async with self:
             yield
+
+    @override
+    async def starlette_dispatch(self, request: Request, scope: ScopeT | None = None) -> Response:
+        """
+        Dispatch a Starlette request to the MiniMCP server and return the response as a Starlette response object.
+
+        Args:
+            request: Starlette request object.
+            scope: Optional message scope passed to the MiniMCP server.
+
+        Returns:
+            MiniMCP server response formatted as a Starlette Response object.
+        """
+        msg = await request.body()
+        msg_str = msg.decode("utf-8")
+
+        result = await self.dispatch(request.method, request.headers, msg_str, scope)
+
+        if isinstance(result.content, MemoryObjectReceiveStream):
+            return EventSourceResponse(result.content, headers=result.headers, ping=self._ping)
+
+        return Response(result.content, result.status_code, result.headers, result.media_type)
+
+    @override
+    def as_starlette(self, path: str = "/", debug: bool = False) -> Starlette:
+        """
+        Provide the HTTP transport as a Starlette application.
+
+        Args:
+            debug: Whether to enable debug mode.
+
+        Returns:
+            Starlette application.
+        """
+
+        route = Route(path, endpoint=self.starlette_dispatch, methods=self.SUPPORTED_HTTP_METHODS)
+
+        return Starlette(routes=[route], debug=debug, lifespan=self.lifespan)
 
     async def _handle_request(
         self,
@@ -113,7 +159,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
                 if isinstance(response, NoMessage):
                     result = MCPHTTPResponse(HTTPStatus.ACCEPTED)
                 else:
-                    result = MCPHTTPResponse(HTTPStatus.OK, response, CONTENT_TYPE_JSON)
+                    result = MCPHTTPResponse(HTTPStatus.OK, response, MEDIA_TYPE_JSON)
 
             except RequestValidationError as e:
                 content, error_message = json_rpc.build_error_message(
@@ -123,9 +169,9 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
                     include_stack_trace=True,
                 )
                 logger.error(error_message)
-                result = MCPHTTPResponse(e.status_code, content, CONTENT_TYPE_JSON)
+                result = MCPHTTPResponse(e.status_code, content, MEDIA_TYPE_JSON)
             except InvalidMessageError as e:
-                result = MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
+                result = MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, MEDIA_TYPE_JSON)
             except Exception as e:
                 # Handler shouldn't raise any exceptions other than InvalidMessageError
                 # Ideally we should not get here
@@ -136,7 +182,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
                     include_stack_trace=True,
                 )
                 logger.exception(f"Unexpected error in Streamable HTTP transport: {error_message}")
-                result = MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, CONTENT_TYPE_JSON)
+                result = MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, MEDIA_TYPE_JSON)
 
             if started_with_stream:
                 try:

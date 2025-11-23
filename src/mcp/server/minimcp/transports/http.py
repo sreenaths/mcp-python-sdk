@@ -3,6 +3,11 @@ from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Generic
 
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Route
+
 import mcp.types as types
 from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
@@ -34,7 +39,8 @@ class RequestValidationError(Exception):
 
 MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
 
-CONTENT_TYPE_JSON = "application/json"
+MEDIA_TYPE_JSON = "application/json"
+MEDIA_TYPE_TEXT = "text/plain"
 
 
 class HTTPTransport(Generic[ScopeT]):
@@ -42,11 +48,13 @@ class HTTPTransport(Generic[ScopeT]):
     HTTP transport implementations for MiniMCP.
 
     Provides handling of HTTP requests by the MiniMCP server, including header validation,
-    content type checking, protocol version validation, and error response generation.
+    media type checking, protocol version validation, and error response generation.
     """
 
     minimcp: MiniMCP[ScopeT]
-    RESPONSE_CONTENT_TYPES: frozenset[str] = frozenset[str]([CONTENT_TYPE_JSON])
+
+    RESPONSE_MEDIA_TYPES: frozenset[str] = frozenset[str]([MEDIA_TYPE_JSON])
+    SUPPORTED_HTTP_METHODS: frozenset[str] = frozenset[str](["POST"])
 
     def __init__(self, minimcp: MiniMCP[ScopeT]) -> None:
         self.minimcp = minimcp
@@ -63,7 +71,40 @@ class HTTPTransport(Generic[ScopeT]):
         if method == "POST":
             return await self._handle_post_request(headers, body, scope)
         else:
-            return self._handle_unsupported_request({"POST"})
+            return self._handle_unsupported_request()
+
+    async def starlette_dispatch(self, request: Request, scope: ScopeT | None = None) -> Response:
+        """
+        Dispatch a Starlette request to the MiniMCP server and return the response as a Starlette response object.
+
+        Args:
+            request: Starlette request object.
+            scope: Optional message scope passed to the MiniMCP server.
+
+        Returns:
+            MiniMCP server response formatted as a Starlette Response object.
+        """
+        msg = await request.body()
+        msg_str = msg.decode("utf-8")
+
+        result = await self.dispatch(request.method, request.headers, msg_str, scope)
+
+        return Response(result.content, result.status_code, result.headers, result.media_type)
+
+    def as_starlette(self, path: str = "/", debug: bool = False) -> Starlette:
+        """
+        Provide the HTTP transport as a Starlette application.
+
+        Args:
+            debug: Whether to enable debug mode.
+
+        Returns:
+            Starlette application.
+        """
+
+        route = Route(path, endpoint=self.starlette_dispatch, methods=self.SUPPORTED_HTTP_METHODS)
+
+        return Starlette(routes=[route], debug=debug)
 
     async def _handle_post_request(
         self, headers: Mapping[str, str], body: str, scope: ScopeT | None
@@ -93,7 +134,7 @@ class HTTPTransport(Generic[ScopeT]):
             if isinstance(response, NoMessage):
                 return MCPHTTPResponse(HTTPStatus.ACCEPTED)
             else:
-                return MCPHTTPResponse(HTTPStatus.OK, response, CONTENT_TYPE_JSON)
+                return MCPHTTPResponse(HTTPStatus.OK, response, MEDIA_TYPE_JSON)
 
         except RequestValidationError as e:
             content, error_message = json_rpc.build_error_message(
@@ -103,9 +144,9 @@ class HTTPTransport(Generic[ScopeT]):
                 include_stack_trace=True,
             )
             logger.error(error_message)
-            return MCPHTTPResponse(e.status_code, content, CONTENT_TYPE_JSON)
+            return MCPHTTPResponse(e.status_code, content, MEDIA_TYPE_JSON)
         except InvalidMessageError as e:
-            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, CONTENT_TYPE_JSON)
+            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, MEDIA_TYPE_JSON)
         except Exception as e:
             # Handle shouldn't raise any exceptions other than InvalidMessageError, so ideally we should not get here
             response, error_message = json_rpc.build_error_message(
@@ -116,43 +157,40 @@ class HTTPTransport(Generic[ScopeT]):
             )
             logger.exception(f"Unexpected error in HTTP transport: {error_message}")
 
-            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, CONTENT_TYPE_JSON)
+            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, MEDIA_TYPE_JSON)
 
-    def _handle_unsupported_request(self, supported_methods: set[str]) -> MCPHTTPResponse:
+    def _handle_unsupported_request(self) -> MCPHTTPResponse:
         """
         Handle an HTTP request with an unsupported method.
-
-        Args:
-            supported_methods: Set of HTTP methods that are supported by the endpoint.
 
         Returns:
             MCPHTTPResponse with 405 METHOD_NOT_ALLOWED status and an Allow header
             listing the supported methods.
         """
+        content = "Method Not Allowed"
         headers = {
-            "Content-Type": CONTENT_TYPE_JSON,
-            "Allow": ", ".join(supported_methods),
+            "Allow": ", ".join(self.SUPPORTED_HTTP_METHODS),
         }
 
-        return MCPHTTPResponse(HTTPStatus.METHOD_NOT_ALLOWED, headers=headers)
+        return MCPHTTPResponse(HTTPStatus.METHOD_NOT_ALLOWED, content, MEDIA_TYPE_TEXT, headers=headers)
 
     def _validate_accept_headers(self, headers: Mapping[str, str]) -> MCPHTTPResponse | None:
         """
-        Validate that the client accepts the required content types.
+        Validate that the client accepts the required media types.
 
-        Parses the Accept header and checks if all needed content types are present.
+        Parses the Accept header and checks if all needed media types are present.
 
         Args:
             headers: HTTP request headers containing the Accept header.
 
         Raises:
-            RequestValidationError: If the client doesn't accept all supported content types.
+            RequestValidationError: If the client doesn't accept all supported types.
         """
         accept_header = headers.get("Accept", "")
         accepted_types = [t.split(";")[0].strip().lower() for t in accept_header.split(",")]
 
-        if not self.RESPONSE_CONTENT_TYPES.issubset(accepted_types):
-            response_content_types_str = " and ".join(self.RESPONSE_CONTENT_TYPES)
+        if not self.RESPONSE_MEDIA_TYPES.issubset(accepted_types):
+            response_content_types_str = " and ".join(self.RESPONSE_MEDIA_TYPES)
             raise RequestValidationError(
                 f"Not Acceptable: Client must accept {response_content_types_str}",
                 HTTPStatus.NOT_ACCEPTABLE,
@@ -169,14 +207,14 @@ class HTTPTransport(Generic[ScopeT]):
             headers: HTTP request headers containing the Content-Type header.
 
         Raises:
-            RequestValidationError: If the content type is not application/json.
+            RequestValidationError: If the type is not application/json.
         """
         content_type = headers.get("Content-Type", "")
         content_type = content_type.split(";")[0].strip().lower()
 
-        if content_type != CONTENT_TYPE_JSON:
+        if content_type != MEDIA_TYPE_JSON:
             raise RequestValidationError(
-                "Unsupported Media Type: Content-Type must be " + CONTENT_TYPE_JSON,
+                "Unsupported Media Type: Content-Type must be " + MEDIA_TYPE_JSON,
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
             )
 
