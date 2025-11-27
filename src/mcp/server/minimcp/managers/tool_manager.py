@@ -216,6 +216,41 @@ class ToolManager:
         return [tool[0] for tool in self._tools.values()]
 
     async def _call(self, name: str, args: dict[str, Any]) -> CombinationContent:
+        """Execute a tool by name, as specified in the MCP tools/call protocol.
+
+        This method handles the MCP tools/call request, executing the tool handler function with
+        the provided arguments. Arguments are validated against the tool's inputSchema, and the
+        result is converted to the appropriate tool result format per the MCP specification.
+
+        Tools use two error reporting mechanisms per the spec:
+        1. Protocol Errors: Raised as a ToolPrimitiveError, ToolInvalidArgumentsError or ToolMCPRuntimeErrors
+        2. Tool Execution Errors: Returned in result with isError=true (handled by lowlevel server)
+
+        Errors raised are of SpecialToolErrors type. SpecialToolErrors inherit from BaseException (not Exception)
+        to bypass the low-level server's default exception handler during tool execution. This allows
+        the tool manager to implement custom error handling and response formatting.
+
+        The result can contain:
+        - Unstructured content: Array of content blocks (text, image, audio, resource links, embedded resources)
+        - Structured content: JSON object (if outputSchema is defined)
+        - Combination: Both unstructured and structured content
+
+        Args:
+            name: The unique identifier of the tool to call.
+            args: Dictionary of arguments to pass to the tool handler. Must conform to the
+                tool's inputSchema. Arguments are validated by MCPFunc.
+
+        Returns:
+            CombinationContent containing either unstructured content, structured content, or both,
+            per the MCP protocol.
+
+        Raises:
+            ToolPrimitiveError: If the tool is not found (maps to -32602 Invalid params per spec).
+            ToolInvalidArgumentsError: If the tool arguments are invalid.
+            ToolMCPRuntimeError: If an error occurs during tool execution (maps to -32603 Internal error).
+                Note: Tool execution errors (API failures, invalid input data, business logic errors)
+                are handled by the lowlevel server and returned with isError=true.
+        """
         if name not in self._tools:
             # Raise INVALID_PARAMS as per MCP specification
             raise ToolPrimitiveError(f"Unknown tool: {name}")
@@ -237,20 +272,13 @@ class ToolManager:
             raise ToolMCPRuntimeError(msg) from e
 
     async def call(self, name: str, args: dict[str, Any]) -> CombinationContent:
-        """Execute a tool by name, as specified in the MCP tools/call protocol.
+        """
+        Wrapper for _call so that the tools can be called manually by the user. It converts
+        the SpecialToolErrors to the appropriate MiniMCPError.
 
-        This method handles the MCP tools/call request, executing the tool handler function with
-        the provided arguments. Arguments are validated against the tool's inputSchema, and the
-        result is converted to the appropriate tool result format per the MCP specification.
-
-        Tools use two error reporting mechanisms per the spec:
-        1. Protocol Errors: PrimitiveError for unknown tools, MCPRuntimeError for internal errors
-        2. Tool Execution Errors: Returned in result with isError=true (handled by lowlevel server)
-
-        The result can contain:
-        - Unstructured content: Array of content blocks (text, image, audio, resource links, embedded resources)
-        - Structured content: JSON object (if outputSchema is defined)
-        - Combination: Both unstructured and structured content
+        SpecialToolErrors inherit from BaseException (not Exception) to bypass the low-level
+        server's default exception handler during tool execution. This allows the tool manager
+        to implement custom error handling and response formatting.
 
         Args:
             name: The unique identifier of the tool to call.
@@ -262,11 +290,9 @@ class ToolManager:
             per the MCP protocol.
 
         Raises:
-            PrimitiveError: If the tool is not found (maps to -32602 Invalid params per spec).
+            PrimitiveError: If the tool is not found.
             InvalidArgumentsError: If the tool arguments are invalid.
-            MCPRuntimeError: If an error occurs during tool execution (maps to -32603 Internal error).
-                Note: Tool execution errors (API failures, invalid input data, business logic errors)
-                are handled by the lowlevel server and returned with isError=true.
+            MCPRuntimeError: If an error occurs during tool execution.
         """
 
         try:
