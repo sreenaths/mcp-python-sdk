@@ -44,7 +44,7 @@ class ResourceDefinition(TypedDict, total=False):
     meta: dict[str, Any] | None
 
 
-class _ResourceDetails(NamedTuple):
+class _ResourceEntry(NamedTuple):
     """
     Internal container for resource registration details.
 
@@ -58,7 +58,7 @@ class _ResourceDetails(NamedTuple):
     resource: Resource | ResourceTemplate
     func: MCPFunc
     normalized_uri: str
-    uri_pattern: re.Pattern[str] | None = None  # Pattern calculated only for resource templates
+    uri_pattern: re.Pattern[str] | None = None  # Pattern only for resource templates, others are None
 
 
 TEMPLATE_PARAM_REGEX = re.compile(r"{(\w+)}")
@@ -117,7 +117,7 @@ class ResourceManager:
         mcp.resource.add(database_schema, "db://schema", mime_type="application/json")
     """
 
-    _resources: dict[str, _ResourceDetails]
+    _resources: dict[str, _ResourceEntry]
 
     def __init__(self, core: Server):
         self._resources = {}
@@ -244,7 +244,7 @@ class ResourceManager:
                 _meta=kwargs.get("meta", None),
             )
 
-            resource_details = _ResourceDetails(
+            resource_details = _ResourceEntry(
                 resource=resource,
                 func=resource_func,
                 normalized_uri=normalized_uri,
@@ -262,7 +262,7 @@ class ResourceManager:
                 _meta=kwargs.get("meta", None),
             )
 
-            resource_details = _ResourceDetails(
+            resource_details = _ResourceEntry(
                 resource=resource,
                 func=resource_func,
                 normalized_uri=uri,
@@ -424,7 +424,7 @@ class ResourceManager:
         return await self._read_resource(details, args)
 
     async def _read_resource(
-        self, details: _ResourceDetails, args: dict[str, str] | None
+        self, details: _ResourceEntry, args: dict[str, str] | None
     ) -> Iterable[ReadResourceContents]:
         """Execute a resource handler and convert the result to ReadResourceContents.
 
@@ -477,7 +477,7 @@ class ResourceManager:
 
         return content
 
-    def _find_matching_resource(self, uri: str) -> tuple[_ResourceDetails, dict[str, str] | None]:
+    def _find_matching_resource(self, uri: str) -> tuple[_ResourceEntry, dict[str, str] | None]:
         """Find a resource that matches the given URI.
 
         First attempts an exact match for static resources, then tries pattern matching
