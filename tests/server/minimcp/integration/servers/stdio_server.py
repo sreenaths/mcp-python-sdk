@@ -1,16 +1,11 @@
 import logging
 import sys
-from pathlib import Path
 
 import anyio
 
 from mcp.server.minimcp import StdioTransport
 
-# Add the current directory to Python path to import math_mcp
-current_dir = Path(__file__).parent
-sys.path.insert(0, str(current_dir))
-
-from math_mcp import math_mcp  # noqa: E402
+from .math_mcp import math_mcp
 
 # Configure logging for the test server
 logging.basicConfig(

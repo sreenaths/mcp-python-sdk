@@ -26,7 +26,7 @@ class TestStdioServer:
         """Create and manage an MCP client connected to our test server."""
         server_params = StdioServerParameters(
             command="uv",
-            args=["run", "python", "tests/server/minimcp/integration/servers/stdio_server.py"],
+            args=["run", "python", "-m", "tests.server.minimcp.integration.servers.stdio_server"],
             env={
                 "UV_INDEX": os.environ.get("UV_INDEX", ""),
                 "PYTHONPATH": str(Path(__file__).parent.parent.parent.parent),

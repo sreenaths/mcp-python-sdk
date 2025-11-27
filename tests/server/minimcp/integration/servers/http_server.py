@@ -10,7 +10,7 @@ from starlette.applications import Starlette
 
 from mcp.server.minimcp import HTTPTransport, StreamableHTTPTransport
 
-from .math_mcp import math_mcp  # noqa: E402
+from .math_mcp import math_mcp
 
 SERVER_HOST = os.environ.get("TEST_SERVER_HOST", "127.0.0.1")
 SERVER_PORT = int(os.environ.get("TEST_SERVER_PORT", "30789"))
