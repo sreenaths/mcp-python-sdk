@@ -137,13 +137,17 @@ class MCPRuntimeError(InternalMCPError):
 # to implement custom error handling and response formatting
 
 
-class ToolPrimitiveError(BaseException):
+class SpecialToolError(BaseException):
     pass
 
 
-class ToolInvalidArgumentsError(BaseException):
+class ToolPrimitiveError(SpecialToolError):
     pass
 
 
-class ToolMCPRuntimeError(BaseException):
+class ToolInvalidArgumentsError(SpecialToolError):
+    pass
+
+
+class ToolMCPRuntimeError(SpecialToolError):
     pass
