@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from mcp.server.minimcp import MiniMCP
+from mcp.server.minimcp.minimcp_types import NoMessage
 from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, RequestValidationError
-from mcp.server.minimcp.types import NoMessage
 
 pytestmark = pytest.mark.anyio
 

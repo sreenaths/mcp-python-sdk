@@ -9,11 +9,11 @@ from anyio.streams.memory import MemoryObjectReceiveStream
 
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.exceptions import MCPRuntimeError
+from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, Message, NoMessage, Send
 from mcp.server.minimcp.transports.streamable_http import (
     SSE_HEADERS,
     StreamableHTTPTransport,
 )
-from mcp.server.minimcp.types import MCPHTTPResponse, Message, NoMessage, Send
 
 pytestmark = pytest.mark.anyio
 

@@ -31,8 +31,8 @@ from mcp.server.minimcp.managers.context_manager import Context, ContextManager,
 from mcp.server.minimcp.managers.prompt_manager import PromptManager
 from mcp.server.minimcp.managers.resource_manager import ResourceManager
 from mcp.server.minimcp.managers.tool_manager import ToolManager
+from mcp.server.minimcp.minimcp_types import Message, NoMessage, Send
 from mcp.server.minimcp.responder import Responder
-from mcp.server.minimcp.types import Message, NoMessage, Send
 
 logger = logging.getLogger(__name__)
 

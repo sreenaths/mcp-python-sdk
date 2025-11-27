@@ -19,8 +19,8 @@ import mcp.types as types
 from mcp.server.minimcp import MiniMCP, json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError, MCPRuntimeError
 from mcp.server.minimcp.managers.context_manager import ScopeT
+from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, Message, NoMessage
 from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, RequestValidationError
-from mcp.server.minimcp.types import MCPHTTPResponse, Message, NoMessage
 
 logger = logging.getLogger(__name__)
 

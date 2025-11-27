@@ -21,7 +21,7 @@ from mcp.server.minimcp.managers.prompt_manager import PromptManager
 from mcp.server.minimcp.managers.resource_manager import ResourceManager
 from mcp.server.minimcp.managers.tool_manager import ToolManager
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.types import Message, NoMessage
+from mcp.server.minimcp.minimcp_types import Message, NoMessage
 
 pytestmark = pytest.mark.anyio
 

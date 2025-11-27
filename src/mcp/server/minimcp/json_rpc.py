@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from mcp.server.minimcp.types import Message
+from mcp.server.minimcp.minimcp_types import Message
 from mcp.types import (
     ErrorData,
     JSONRPCError,
