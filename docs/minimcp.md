@@ -294,9 +294,9 @@ The table below lists the available examples along with the commands to run them
 
 | # | Transport                    | Command                                                                        |
 |---|------------------------------|--------------------------------------------------------------------------------|
-| 1 | Stdio                        | `uv run -m examples.minimcp.math_mcp_server.stdio`                                     |
-| 2 | HTTP with FastAPI            | `uv run uvicorn examples.minimcp.math_mcp_server.fastapi_http:app --reload`            |
-| 3 | Streamable HTTP with FastAPI | `uv run uvicorn examples.minimcp.math_mcp_server.fastapi_streamable_http:app --reload` |
+| 1 | Stdio                        | `uv run -m examples.minimcp.math_mcp.stdio_server`                                     |
+| 2 | HTTP with FastAPI            | `uv run uvicorn examples.minimcp.math_mcp.http_server:app --reload`            |
+| 3 | Streamable HTTP with FastAPI | `uv run uvicorn examples.minimcp.math_mcp.streamable_http_server:app --reload` |
 
 ### Claude Desktop
 

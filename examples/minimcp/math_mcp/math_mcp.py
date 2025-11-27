@@ -4,6 +4,7 @@ A simple MCP server for mathematical operations.
 
 from typing import Any
 
+import anyio
 from pydantic import Field
 
 from mcp.server.minimcp import MiniMCP
@@ -66,6 +67,20 @@ def add(
     a: float = Field(description="The first float number"), b: float = Field(description="The second float number")
 ) -> float:
     "Add two numbers"
+    return a + b
+
+
+@math_mcp.tool(description="Add two numbers with progress reporting")
+async def add_with_progress(
+    a: float = Field(description="The first float number"), b: float = Field(description="The second float number")
+) -> float:
+    responder = math_mcp.context.get_responder()
+    await responder.report_progress(0.1, message="Adding numbers")
+    await anyio.sleep(1)
+    await responder.report_progress(0.4, message="Adding numbers")
+    await anyio.sleep(1)
+    await responder.report_progress(0.7, message="Adding numbers")
+    await anyio.sleep(1)
     return a + b
 
 

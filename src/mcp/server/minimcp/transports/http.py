@@ -104,6 +104,7 @@ class HTTPTransport(Generic[ScopeT]):
 
         route = Route(path, endpoint=self.starlette_dispatch, methods=self.SUPPORTED_HTTP_METHODS)
 
+        logger.info("Creating MCP application at path: %s", path)
         return Starlette(routes=[route], debug=debug)
 
     async def _handle_post_request(

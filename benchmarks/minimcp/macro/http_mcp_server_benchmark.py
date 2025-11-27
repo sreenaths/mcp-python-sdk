@@ -50,6 +50,7 @@ async def http_benchmark(
 ) -> None:
     benchmark = MCPServerBenchmark[CallToolResult](LOADS, name)
 
+    # Use the streamable HTTP transport for FastMCP
     await benchmark.run(
         "fastmcp",
         partial(create_client_server, fastmcp_http_server),
