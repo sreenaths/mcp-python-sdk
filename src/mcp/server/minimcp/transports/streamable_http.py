@@ -135,7 +135,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         task_status: TaskStatus[MCPHTTPResponse],
     ):
         """
-        This is the special sauce that makes the StreamableHTTPTransport possible.
+        This is the special sauce that makes the smart StreamableHTTPTransport possible.
         _handle_post_request_task runs as a separate task and manages the handler execution. Once ready, it sends a
         MCPHTTPResponse via the task_status. If the handler calls the send callback, streaming is activated,
         else it acts like a regular HTTP transport. For streaming, _handle_post_request_task sends a MCPHTTPResponse
