@@ -75,6 +75,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         """
         Dispatch an HTTP request to the MiniMCP server.
         """
+
         if self._tg is None:
             raise MCPRuntimeError("StreamableHTTPTransport was not started")
 

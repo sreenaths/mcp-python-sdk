@@ -124,7 +124,7 @@ class ContextManager(Generic[ScopeT]):
         """
         scope = self.get().scope
         if scope is None:
-            raise ContextError("Scope is not available in current context")
+            raise ContextError("ContextError: Scope is not available in current context")
         return scope
 
     def get_responder(self) -> Responder:
@@ -144,5 +144,5 @@ class ContextManager(Generic[ScopeT]):
         """
         responder = self.get().responder
         if responder is None:
-            raise ContextError("Responder is not available in current context")
+            raise ContextError("ContextError: Responder is not available in current context")
         return responder
