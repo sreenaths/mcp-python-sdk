@@ -7,7 +7,7 @@ from typing import Any
 
 import anyio
 from anyio.abc import TaskGroup, TaskStatus
-from anyio.streams.memory import MemoryObjectReceiveStream
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -32,6 +32,53 @@ SSE_HEADERS = {
     "Connection": "keep-alive",
     "Content-Type": MEDIA_TYPE_SSE,
 }
+
+
+class StreamManager:
+    _stack: AsyncExitStack
+
+    _lock: anyio.Lock
+    is_created: bool = False
+
+    send_stream: MemoryObjectSendStream[Message]
+    recv_stream: MemoryObjectReceiveStream[Message]
+
+    def __init__(self, stack: AsyncExitStack) -> None:
+        self._stack = stack
+        self._lock = anyio.Lock()
+
+    async def create(self) -> bool:
+        try:
+            if not self.is_created:
+                async with self._lock:
+                    if not self.is_created:
+                        send_stream, recv_stream = anyio.create_memory_object_stream[Message](0)
+                        self.send_stream = await self._stack.enter_async_context(send_stream)
+                        self.recv_stream = await self._stack.enter_async_context(recv_stream)
+                        self.is_created = True
+                        return True
+        except Exception:
+            logger.error("Stream creation failed.", exc_info=True)
+        return False
+
+    async def send(self, message: Message) -> None:
+        try:
+            await self.send_stream.send(message)
+        except AttributeError:
+            logger.error("Send stream not created. This is unexpected.", exc_info=True)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError):
+            # Consumer went away or stream closed or stream not created; ignore further sends.
+            pass
+
+    async def close_send(self) -> None:
+        if self.is_created:
+            try:
+                await self.send_stream.aclose()
+            except AttributeError:
+                logger.error("Send stream not created. This is unexpected.", exc_info=True)
+            except (anyio.BrokenResourceError, anyio.ClosedResourceError):
+                # Consumer went away or stream closed or stream not created; ignore further sends.
+                pass
 
 
 # TODO: Add resumability based on Last-Event-ID header on GET method.
@@ -143,41 +190,20 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         the handler finishes executing.
         """
 
-        send_stream, recv_stream = anyio.create_memory_object_stream[Message](0)
-        send_stream = await self._stack.enter_async_context(send_stream)
-        recv_stream = await self._stack.enter_async_context(recv_stream)
-
-        started_with_stream = False
-        first_init_lock = anyio.Lock()
+        stream_manager = StreamManager(self._stack)
 
         async def send_callback(value: Message) -> None:
-            nonlocal started_with_stream
-            # Fast path if we've already started streaming
-            if not started_with_stream:
-                async with first_init_lock:
-                    if not started_with_stream:
-                        started_with_stream = True
-                        # Ready to stream
-                        task_status.started(MCPHTTPResponse(HTTPStatus.OK, recv_stream, headers=SSE_HEADERS))
+            if await stream_manager.create():
+                task_status.started(MCPHTTPResponse(HTTPStatus.OK, stream_manager.recv_stream, headers=SSE_HEADERS))
+            await stream_manager.send(value)
 
-            try:
-                await send_stream.send(value)
-            except (anyio.BrokenResourceError, anyio.ClosedResourceError):
-                # Consumer went away or stream closed; ignore further sends.
-                pass
-
-        async with send_stream:
+        try:
             result = await self._handle_post_request(headers, body, scope, send_callback)
-
-            if started_with_stream:
-                try:
-                    if isinstance(result.content, Message):
-                        await send_stream.send(result.content)
-                except (anyio.BrokenResourceError, anyio.ClosedResourceError):
-                    # Consumer went away or stream closed; ignore further sends.
-                    pass
+            if stream_manager.is_created:
+                if isinstance(result.content, Message):
+                    await stream_manager.send(result.content)
             else:
                 task_status.started(result)
-
-        if not started_with_stream:
-            await recv_stream.aclose()
+        finally:
+            # Close send_stream at the end of the task.
+            await stream_manager.close_send()
