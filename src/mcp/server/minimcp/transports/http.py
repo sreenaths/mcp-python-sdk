@@ -13,7 +13,7 @@ from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, NoMessage
+from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, NoMessage, Send
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 logger = logging.getLogger(__name__)
@@ -108,7 +108,7 @@ class HTTPTransport(Generic[ScopeT]):
         return Starlette(routes=[route], debug=debug)
 
     async def _handle_post_request(
-        self, headers: Mapping[str, str], body: str, scope: ScopeT | None
+        self, headers: Mapping[str, str], body: str, scope: ScopeT | None, send_callback: Send | None = None
     ) -> MCPHTTPResponse:
         """
         Handle a POST HTTP request.
@@ -129,7 +129,7 @@ class HTTPTransport(Generic[ScopeT]):
             self._validate_protocol_version(headers, body)
 
             # Handle the request
-            response = await self.minimcp.handle(body, scope=scope)
+            response = await self.minimcp.handle(body, send_callback, scope)
 
             # Process the response
             if isinstance(response, NoMessage):
@@ -149,14 +149,15 @@ class HTTPTransport(Generic[ScopeT]):
         except InvalidMessageError as e:
             return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, MEDIA_TYPE_JSON)
         except Exception as e:
-            # Handle shouldn't raise any exceptions other than InvalidMessageError, so ideally we should not get here
+            # Handler shouldn't raise any exceptions other than InvalidMessageError
+            # Ideally we should not get here
             response, error_message = json_rpc.build_error_message(
                 e,
                 body,
                 types.INTERNAL_ERROR,
                 include_stack_trace=True,
             )
-            logger.exception(f"Unexpected error in HTTP transport: {error_message}")
+            logger.exception(f"Unexpected error in {self.__class__.__name__}: {error_message}")
 
             return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, MEDIA_TYPE_JSON)
 

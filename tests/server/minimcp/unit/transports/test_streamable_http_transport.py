@@ -269,17 +269,17 @@ class TestStreamableHTTPTransport:
         assert "Unsupported protocol version" in str(result.content)
         handler.assert_not_called()
 
-    async def test_handle_request_task_status_handling(
+    async def test_handle_post_request_task_task_status_handling(
         self, transport: StreamableHTTPTransport[None], valid_headers: dict[str, str], valid_body: str
     ):
-        """Test the _handle_request method's task status handling."""
+        """Test the _handle_post_request_task method's task status handling."""
         handler = AsyncMock(return_value='{"result": "success"}')
         transport.minimcp.handle = handler
         result: MCPHTTPResponse | None = None
 
         async with transport:
             async with anyio.create_task_group() as tg:
-                result = await tg.start(transport._handle_request, valid_headers, valid_body, None)
+                result = await tg.start(transport._handle_post_request_task, valid_headers, valid_body, None)
 
         assert result is not None
         assert result.status_code == HTTPStatus.OK
@@ -288,16 +288,16 @@ class TestStreamableHTTPTransport:
 
         handler.assert_called_once()
 
-    async def test_handle_request_exception_handling(
+    async def test_handle_post_request_task_exception_handling(
         self, transport: StreamableHTTPTransport[None], valid_headers: dict[str, str], valid_body: str
     ):
-        """Test the _handle_request method's exception handling."""
+        """Test the _handle_post_request_task method's exception handling."""
         handler = AsyncMock(side_effect=Exception("Test error"))
         transport.minimcp.handle = handler
         result: MCPHTTPResponse | None = None
 
         async with anyio.create_task_group() as tg:
-            result = await tg.start(transport._handle_request, valid_headers, valid_body, None)
+            result = await tg.start(transport._handle_post_request_task, valid_headers, valid_body, None)
 
         assert result is not None
         assert result.status_code == HTTPStatus.BAD_REQUEST

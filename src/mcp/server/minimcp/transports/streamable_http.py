@@ -15,12 +15,11 @@ from starlette.responses import Response
 from starlette.routing import Route
 from typing_extensions import override
 
-import mcp.types as types
-from mcp.server.minimcp import MiniMCP, json_rpc
-from mcp.server.minimcp.exceptions import InvalidMessageError, MCPRuntimeError
+from mcp.server.minimcp import MiniMCP
+from mcp.server.minimcp.exceptions import MCPRuntimeError
 from mcp.server.minimcp.managers.context_manager import ScopeT
-from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, Message, NoMessage
-from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, RequestValidationError
+from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, Message
+from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +34,7 @@ SSE_HEADERS = {
 }
 
 
+# TODO: Add resumability based on Last-Event-ID header on GET method.
 class StreamableHTTPTransport(HTTPTransport[ScopeT]):
     _ping: int
 
@@ -67,6 +67,25 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
     async def lifespan(self, _: Any) -> AsyncGenerator[None, None]:
         async with self:
             yield
+
+    @override
+    async def dispatch(
+        self, method: str, headers: Mapping[str, str], body: str, scope: ScopeT | None = None
+    ) -> MCPHTTPResponse:
+        """
+        Dispatch an HTTP request to the MiniMCP server.
+        """
+        if self._tg is None:
+            raise MCPRuntimeError("StreamableHTTPTransport was not started")
+
+        logger.debug("Handling HTTP request. Method: %s, Headers: %s", method, headers)
+
+        if method == "POST":
+            # Start _handle_post_request in a separate task and await for readiness.
+            # Once ready _handle_post_request_task returns a MCPHTTPResponse.
+            return await self._tg.start(self._handle_post_request_task, headers, body, scope)
+        else:
+            return self._handle_unsupported_request()
 
     @override
     async def starlette_dispatch(self, request: Request, scope: ScopeT | None = None) -> Response:
@@ -107,7 +126,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         logger.info("Creating MCP application at path: %s", path)
         return Starlette(routes=[route], debug=debug, lifespan=self.lifespan)
 
-    async def _handle_request(
+    async def _handle_post_request_task(
         self,
         headers: Mapping[str, str],
         body: str,
@@ -116,9 +135,9 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
     ):
         """
         This is the special sauce that makes the StreamableHTTPTransport possible.
-        _handle_request runs in a separate task and manages the handler executing. Once ready it sends a
+        _handle_post_request_task runs as a separate task and manages the handler execution. Once ready, it sends a
         MCPHTTPResponse via the task_status. If the handler calls the send callback, streaming is activated,
-        else it acts like a regular HTTP transport. For streaming, _handle_request sends a MCPHTTPResponse
+        else it acts like a regular HTTP transport. For streaming, _handle_post_request_task sends a MCPHTTPResponse
         with a MemoryObjectReceiveStream as the content and continues running in the background until
         the handler finishes executing.
         """
@@ -147,43 +166,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
                 pass
 
         async with send_stream:
-            try:
-                # Validate the request headers and body
-                self._validate_accept_headers(headers)
-                self._validate_content_type(headers)
-                self._validate_protocol_version(headers, body)
-
-                # Handle the request
-                response = await self.minimcp.handle(body, send_callback, scope)
-
-                # Process the response
-                if isinstance(response, NoMessage):
-                    result = MCPHTTPResponse(HTTPStatus.ACCEPTED)
-                else:
-                    result = MCPHTTPResponse(HTTPStatus.OK, response, MEDIA_TYPE_JSON)
-
-            except RequestValidationError as e:
-                content, error_message = json_rpc.build_error_message(
-                    e,
-                    body,
-                    types.INVALID_REQUEST,
-                    include_stack_trace=True,
-                )
-                logger.error(error_message)
-                result = MCPHTTPResponse(e.status_code, content, MEDIA_TYPE_JSON)
-            except InvalidMessageError as e:
-                result = MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, MEDIA_TYPE_JSON)
-            except Exception as e:
-                # Handler shouldn't raise any exceptions other than InvalidMessageError
-                # Ideally we should not get here
-                response, error_message = json_rpc.build_error_message(
-                    e,
-                    body,
-                    types.INTERNAL_ERROR,
-                    include_stack_trace=True,
-                )
-                logger.exception(f"Unexpected error in Streamable HTTP transport: {error_message}")
-                result = MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, MEDIA_TYPE_JSON)
+            result = await self._handle_post_request(headers, body, scope, send_callback)
 
             if started_with_stream:
                 try:
@@ -197,26 +180,3 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
 
         if not started_with_stream:
             await recv_stream.aclose()
-
-    @override
-    async def _handle_post_request(
-        self, headers: Mapping[str, str], body: str, scope: ScopeT | None
-    ) -> MCPHTTPResponse:
-        """
-        Handle a POST StreamableHTTP request.
-        It validates the request headers and body, and then passes on the message to the MiniMCP for handling.
-
-        Args:
-            headers: HTTP request headers.
-            body: HTTP request body.
-
-        Returns:
-            MCPHTTPResponse with the response from the MiniMCP server.
-        """
-
-        if self._tg is None:
-            raise MCPRuntimeError("StreamableHTTPTransport was not started")
-
-        # Start _handle_request in a separate task and await for readiness.
-        # Once ready _handle_request returns a MCPHTTPResponse.
-        return await self._tg.start(self._handle_request, headers, body, scope)

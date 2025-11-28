@@ -40,7 +40,7 @@ class TestHTTPTransport:
         assert result.status_code == HTTPStatus.OK
         assert result.content == '{"jsonrpc": "2.0", "result": "success", "id": 1}'
         assert result.media_type == MEDIA_TYPE_JSON
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_dispatch_unsupported_method(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling of unsupported HTTP methods."""
@@ -88,7 +88,7 @@ class TestHTTPTransport:
 
         assert result.status_code == HTTPStatus.ACCEPTED
         assert result.content is None or isinstance(result.content, NoMessage)
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_dispatch_error_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling of JSON-RPC error responses."""
@@ -102,7 +102,7 @@ class TestHTTPTransport:
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
         assert result.media_type == MEDIA_TYPE_JSON
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_dispatch_internal_error_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling of internal error responses."""
@@ -191,7 +191,7 @@ class TestHTTPTransport:
         result = await transport.dispatch("POST", headers, initialize_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(initialize_body, scope=None)
+        mock_handler.assert_called_once_with(initialize_body, None, None)
 
     async def test_dispatch_default_protocol_version(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test that default protocol version is used when header is missing."""
@@ -204,7 +204,7 @@ class TestHTTPTransport:
         result = await transport.dispatch("POST", headers, self.valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_dispatch_content_type_with_charset(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test Content-Type header with charset parameter."""
@@ -217,7 +217,7 @@ class TestHTTPTransport:
         result = await transport.dispatch("POST", headers, self.valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_dispatch_accept_header_with_quality(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test Accept header with quality values."""
@@ -230,7 +230,7 @@ class TestHTTPTransport:
         result = await transport.dispatch("POST", headers, self.valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_dispatch_case_insensitive_headers(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test that header checking is case insensitive."""
@@ -243,7 +243,7 @@ class TestHTTPTransport:
         result = await transport.dispatch("POST", headers, self.valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_handle_post_request_direct(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test the _handle_post_request method directly."""
@@ -252,7 +252,7 @@ class TestHTTPTransport:
         assert result.status_code == HTTPStatus.OK
         assert result.content == '{"jsonrpc": "2.0", "result": "success", "id": 1}'
         assert result.media_type == MEDIA_TYPE_JSON
-        mock_handler.assert_called_once_with(self.valid_body, scope=None)
+        mock_handler.assert_called_once_with(self.valid_body, None, None)
 
     async def test_response_without_id(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
         """Test handling of responses without ID (notifications)."""
