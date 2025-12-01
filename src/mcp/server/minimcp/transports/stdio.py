@@ -55,6 +55,12 @@ class StdioTransport(Generic[ScopeT]):
         stdin: anyio.AsyncFile[str] | None = None,
         stdout: anyio.AsyncFile[str] | None = None,
     ) -> None:
+        """
+        Args:
+            minimcp: The MiniMCP instance to use.
+            stdin: Optional stdin stream to use.
+            stdout: Optional stdout stream to use.
+        """
         self.minimcp = minimcp
 
         self.stdin = stdin or anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))

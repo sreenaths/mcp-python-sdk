@@ -20,11 +20,6 @@ class Responder:
 
     The responder automatically resets the idle timeout when sending notifications,
     ensuring the handler doesn't time out while actively communicating with the client.
-
-    Args:
-        request: The incoming message that triggered the handler.
-        send: The send function for transmitting messages to the client.
-        time_limiter: The TimeLimiter for managing handler idle timeout.
     """
 
     _request: Message
@@ -34,6 +29,12 @@ class Responder:
     _send: Send
 
     def __init__(self, request: Message, send: Send, time_limiter: TimeLimiter):
+        """
+        Args:
+            request: The incoming message that triggered the handler.
+            send: The send function for transmitting messages to the client.
+            time_limiter: The TimeLimiter for managing handler idle timeout.
+        """
         self._request = request
         self._progress_token = self._get_progress_token(request)
 

@@ -86,6 +86,10 @@ class ToolManager:
     _tools: dict[str, tuple[types.Tool, MCPFunc]]
 
     def __init__(self, core: Server):
+        """
+        Args:
+            core: The low-level MCP Server instance to hook into.
+        """
         self._tools = {}
         self._hook_core(core)
 

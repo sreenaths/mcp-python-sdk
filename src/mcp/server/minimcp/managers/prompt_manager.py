@@ -78,6 +78,10 @@ class PromptManager:
     _prompts: dict[str, tuple[Prompt, MCPFunc]]
 
     def __init__(self, core: Server):
+        """
+        Args:
+            core: The low-level MCP Server instance to hook into.
+        """
         self._prompts = {}
         self._hook_core(core)
 

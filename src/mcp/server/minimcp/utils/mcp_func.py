@@ -27,15 +27,6 @@ class MCPFunc:
     The execute() method can be called with a set of arguments. MCPFunc will
     validate the arguments against the function signature, call the function,
     and return the result.
-
-    Attributes:
-        func: The wrapped function
-        name: Function name (custom or inferred)
-        doc: Function docstring
-        is_async: Whether function is async
-        meta: FuncMetadata with Pydantic models and validation logic
-        input_schema: JSON schema for parameters
-        output_schema: JSON schema for return value (if structured output)
     """
 
     func: AnyFunction
@@ -48,6 +39,12 @@ class MCPFunc:
     output_schema: dict[str, Any] | None
 
     def __init__(self, func: AnyFunction, name: str | None = None):
+        """
+        Args:
+            func: The function to validate.
+            name: The custom name to use for the function.
+        """
+
         self._validate_func(func)
 
         self.func = func

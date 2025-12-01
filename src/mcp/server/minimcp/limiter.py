@@ -14,15 +14,16 @@ class TimeLimiter:
 
     The timer can be reset during handler execution to extend the deadline,
     preventing timeout when the handler is actively processing.
-
-    Args:
-        timeout: The idle timeout in seconds.
     """
 
     _timeout: float
     _scope: CancelScope
 
     def __init__(self, timeout: float):
+        """
+        Args:
+            timeout: The idle timeout in seconds.
+        """
         self._timeout = float(timeout)
         self._scope = CancelScope()
         self.reset()
@@ -51,12 +52,6 @@ class Limiter:
     and can be reset using time_limiter.reset() to extend the deadline during
     active processing.
 
-    Args:
-        idle_timeout: The idle timeout in seconds. Handlers exceeding this timeout
-            will be cancelled if they don't reset the timer.
-        max_concurrency: The maximum number of concurrent message handlers allowed.
-            Additional requests will wait until a slot becomes available.
-
     Yields:
         A TimeLimiter that can be used to reset the idle timeout during handler execution.
     """
@@ -64,6 +59,13 @@ class Limiter:
     _idle_timeout: int
 
     def __init__(self, idle_timeout: int, max_concurrency: int) -> None:
+        """
+        Args:
+            idle_timeout: The idle timeout in seconds. Handlers exceeding this timeout
+                will be cancelled if they don't reset the timer.
+            max_concurrency: The maximum number of concurrent message handlers allowed.
+                Additional requests will wait until a slot becomes available.
+        """
         self._idle_timeout = idle_timeout
         self._capacity_limiter = CapacityLimiter(max_concurrency)
 

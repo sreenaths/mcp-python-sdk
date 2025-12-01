@@ -120,6 +120,10 @@ class ResourceManager:
     _resources: dict[str, _ResourceEntry]
 
     def __init__(self, core: Server):
+        """
+        Args:
+            core: The low-level MCP Server instance to hook into.
+        """
         self._resources = {}
         self._hook_core(core)
 
