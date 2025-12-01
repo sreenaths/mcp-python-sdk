@@ -113,7 +113,7 @@ class TestStreamableHTTPTransport:
         valid_body: str,
     ):
         """Test that dispatch raises error when transport is not started."""
-        with pytest.raises(MCPRuntimeError, match="StreamableHTTPTransport was not started"):
+        with pytest.raises(MCPRuntimeError, match="dispatch can only be used inside an 'async with' block"):
             await transport.dispatch("POST", valid_headers, valid_body)
 
     async def test_dispatch_sse_response(
@@ -177,7 +177,7 @@ class TestStreamableHTTPTransport:
             result = await transport.dispatch("POST", valid_headers, valid_body)
 
         # Should return an error response
-        assert result.status_code == HTTPStatus.BAD_REQUEST
+        assert result.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert result.content is not None
         assert "error" in str(result.content)
         handler.assert_called_once()
@@ -300,7 +300,7 @@ class TestStreamableHTTPTransport:
             result = await tg.start(transport._handle_post_request_task, valid_headers, valid_body, None)
 
         assert result is not None
-        assert result.status_code == HTTPStatus.BAD_REQUEST
+        assert result.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
         assert result.content is not None
         assert "error" in str(result.content)
         handler.assert_called_once()
@@ -382,3 +382,153 @@ class TestStreamableHTTPTransport:
         assert result.content is not None
         assert "Handler failed" in error_message
         streaming_handler.assert_called_once()
+
+    async def test_stream_cleanup_without_consumer(
+        self, transport: StreamableHTTPTransport[None], sse_headers: dict[str, str], valid_body: str
+    ):
+        """Test Case 2: Stream cleanup when no consumer reads from recv_stream."""
+
+        async def streaming_handler(message: Message, send: Send, _: Any):
+            await send('{"jsonrpc": "2.0", "result": "stream1", "id": 1}')
+            await send('{"jsonrpc": "2.0", "result": "stream2", "id": 2}')
+            return "Final result"
+
+        streaming_handler = AsyncMock(side_effect=streaming_handler)
+        transport.minimcp.handle = streaming_handler
+
+        async with transport:
+            result = await transport.dispatch("POST", sse_headers, valid_body)
+            # Don't consume from recv_stream - simulates test without consumer
+            assert isinstance(result.content, MemoryObjectReceiveStream)
+
+        # Transport exit should cancel tasks and close_receive() should clean up
+        # If this test completes without issues, cleanup worked correctly
+        streaming_handler.assert_called_once()
+
+    async def test_stream_cleanup_with_early_consumer_disconnect(
+        self, transport: StreamableHTTPTransport[None], sse_headers: dict[str, str], valid_body: str
+    ):
+        """Test Case 3: Consumer disconnects mid-stream without fully draining."""
+
+        async def streaming_handler(message: Message, send: Send, _: Any):
+            await send('{"jsonrpc": "2.0", "result": "stream1", "id": 1}')
+            await anyio.sleep(0.1)  # Simulate some work
+            await send('{"jsonrpc": "2.0", "result": "stream2", "id": 2}')
+            await anyio.sleep(0.1)
+            await send('{"jsonrpc": "2.0", "result": "stream3", "id": 3}')
+            return "Final result"
+
+        streaming_handler = AsyncMock(side_effect=streaming_handler)
+        transport.minimcp.handle = streaming_handler
+
+        async with transport:
+            result = await transport.dispatch("POST", sse_headers, valid_body)
+            assert isinstance(result.content, MemoryObjectReceiveStream)
+
+            # Consumer reads only first message then disconnects (closes stream)
+            msg1 = await result.content.receive()
+            assert "stream1" in str(msg1)
+
+            # Simulate consumer disconnecting
+            await result.content.aclose()
+
+        # Handler should handle BrokenResourceError gracefully
+        # close_receive() ensures cleanup even though consumer closed early
+        streaming_handler.assert_called_once()
+
+    async def test_stream_cleanup_during_transport_shutdown(
+        self, transport: StreamableHTTPTransport[None], sse_headers: dict[str, str], valid_body: str
+    ):
+        """Test Case 4: Transport shutdown cancels tasks with proper stream cleanup."""
+
+        async def long_running_handler(message: Message, send: Send, _: Any):
+            # Start sending - this will trigger stream creation
+            await send('{"jsonrpc": "2.0", "result": "stream1", "id": 1}')
+            # Try to send more - simulates long-running handler
+            try:
+                await anyio.sleep(10)  # Would block for 10s
+                await send('{"jsonrpc": "2.0", "result": "stream2", "id": 2}')
+            except anyio.CancelledError:
+                # Expected when transport shuts down
+                raise
+
+        long_running_handler = AsyncMock(side_effect=long_running_handler)
+        transport.minimcp.handle = long_running_handler
+
+        async with transport:
+            result = await transport.dispatch("POST", sse_headers, valid_body)
+            assert isinstance(result.content, MemoryObjectReceiveStream)
+
+            # Consume the first message to unblock the handler
+            await result.content.receive()
+
+            # Now handler is running (sleeping for 10s)
+            # Exit transport context to trigger cancellation
+            await anyio.sleep(0.01)
+
+        # If we get here without hanging, cancellation + shielded cleanup worked
+        long_running_handler.assert_called_once()
+
+    async def test_stream_cleanup_delay_allows_normal_consumption(
+        self, transport: StreamableHTTPTransport[None], sse_headers: dict[str, str], valid_body: str
+    ):
+        """Test Case 1: Normal consumer finishes within delay window."""
+
+        async def streaming_handler(message: Message, send: Send, _: Any):
+            await send('{"jsonrpc": "2.0", "result": "stream1", "id": 1}')
+            await send('{"jsonrpc": "2.0", "result": "stream2", "id": 2}')
+            return "Final result"
+
+        streaming_handler = AsyncMock(side_effect=streaming_handler)
+        transport.minimcp.handle = streaming_handler
+
+        async with transport:
+            result = await transport.dispatch("POST", sse_headers, valid_body)
+            assert isinstance(result.content, MemoryObjectReceiveStream)
+
+            # Normal consumer reads all messages quickly
+            recv_stream = result.content
+            messages: list[str] = []
+            async with anyio.create_task_group() as tg:
+
+                async def consume():
+                    try:
+                        while True:
+                            msg = await recv_stream.receive()
+                            messages.append(str(msg))
+                    except anyio.EndOfStream:
+                        pass
+
+                tg.start_soon(consume)
+
+                # Give consumer time to read (within the 0.1s delay window)
+                await anyio.sleep(0.05)
+
+        # Consumer should have received both messages before cleanup
+        assert len(messages) >= 2
+        streaming_handler.assert_called_once()
+
+    async def test_stream_resource_cleanup_no_leaks(
+        self, transport: StreamableHTTPTransport[None], sse_headers: dict[str, str], valid_body: str
+    ):
+        """Test that recv_stream is always closed to prevent resource leaks."""
+
+        async def streaming_handler(message: Message, send: Send, _: Any):
+            await send('{"jsonrpc": "2.0", "result": "data", "id": 1}')
+            return "done"
+
+        streaming_handler = AsyncMock(side_effect=streaming_handler)
+        transport.minimcp.handle = streaming_handler
+
+        # Run multiple times to verify no resource accumulation
+        for _ in range(3):
+            async with transport:
+                result = await transport.dispatch("POST", sse_headers, valid_body)
+                # Don't consume - simulates worst case
+                assert isinstance(result.content, MemoryObjectReceiveStream)
+
+            # Small delay to let cleanup complete
+            await anyio.sleep(0.15)
+
+        # If no "unraisable exception" warnings, streams were properly closed
+        assert streaming_handler.call_count == 3

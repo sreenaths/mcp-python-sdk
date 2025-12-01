@@ -1,6 +1,6 @@
 import logging
-from collections.abc import AsyncGenerator, Mapping
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncGenerator, Callable, Mapping
+from contextlib import asynccontextmanager
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any
@@ -16,7 +16,7 @@ from starlette.routing import Route
 from typing_extensions import override
 
 from mcp.server.minimcp import MiniMCP
-from mcp.server.minimcp.exceptions import MCPRuntimeError
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MiniMCPError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, Message
 from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport
@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 
 MEDIA_TYPE_SSE = "text/event-stream"
-DEFAULT_PING_INTERVAL = 15  # Ping every 15 seconds to keep the connection alive. It's a widely adopted convention.
 
 SSE_HEADERS = {
     "Cache-Control": "no-cache, no-transform",
@@ -35,83 +34,177 @@ SSE_HEADERS = {
 
 
 class StreamManager:
-    _stack: AsyncExitStack
+    """
+    Manages the lifecycle of memory object streams for the StreamableHTTPTransport.
+
+    Streams are created on demand - Once streaming is activated, the receive stream
+    is handed off to the consumer via on_create callback, while the send stream
+    remains owned by the StreamManager.
+
+    Once the handling completes, the close method needs to be called manually to close
+    the streams gracefully - Not using a context manager to keep the approach explicit.
+
+    On close, the send stream is closed immediately and the receive stream is closed after
+    a configurable delay to allow consumers to finish draining the stream. The cleanup is
+    shielded from cancellation to prevent resource leaks when tasks are cancelled during
+    transport shutdown.
+    """
 
     _lock: anyio.Lock
-    is_created: bool = False
+    _on_create: Callable[[MCPHTTPResponse], None]
 
-    send_stream: MemoryObjectSendStream[Message]
-    recv_stream: MemoryObjectReceiveStream[Message]
+    _send_stream: MemoryObjectSendStream[Message] | None
+    _receive_stream: MemoryObjectReceiveStream[Message] | None
 
-    def __init__(self, stack: AsyncExitStack) -> None:
-        self._stack = stack
+    def __init__(self, on_create: Callable[[MCPHTTPResponse], None]) -> None:
+        """
+        Args:
+            on_create: Callback to be called when the streams are created.
+        """
+        self._on_create = on_create
         self._lock = anyio.Lock()
 
-    async def create(self) -> bool:
-        try:
-            if not self.is_created:
+        self._send_stream = None
+        self._receive_stream = None
+
+    def is_streaming(self) -> bool:
+        """
+        Returns:
+            True if the streams are created and ready to be used, False otherwise.
+        """
+        return self._send_stream is not None and self._receive_stream is not None
+
+    async def create_and_send(self, message: Message, create_timeout: float = 0.1) -> None:
+        """
+        Creates the streams and sends the message. If the streams are already available,
+        it sends the message over the existing streams.
+
+        Args:
+            message: Message to send.
+        """
+        if self._send_stream is None:
+            with anyio.fail_after(create_timeout):
                 async with self._lock:
-                    if not self.is_created:
-                        send_stream, recv_stream = anyio.create_memory_object_stream[Message](0)
-                        self.send_stream = await self._stack.enter_async_context(send_stream)
-                        self.recv_stream = await self._stack.enter_async_context(recv_stream)
-                        self.is_created = True
-                        return True
-        except Exception:
-            logger.error("Stream creation failed.", exc_info=True)
-        return False
+                    if self._send_stream is None:
+                        send_stream, receive_stream = anyio.create_memory_object_stream[Message](0)
+                        self._on_create(MCPHTTPResponse(HTTPStatus.OK, receive_stream, headers=SSE_HEADERS))
+                        self._send_stream = send_stream
+                        self._receive_stream = receive_stream
+
+        await self.send(message)
 
     async def send(self, message: Message) -> None:
+        """
+        Sends the message to the send stream.
+
+        Args:
+            message: Message to send.
+
+        Raises:
+            MiniMCPError: If the send stream is unavailable.
+        """
+        if self._send_stream is None:
+            raise MiniMCPError("Send stream is unavailable")
+
         try:
-            await self.send_stream.send(message)
-        except AttributeError:
-            logger.error("Send stream not created. This is unexpected.", exc_info=True)
-        except (anyio.BrokenResourceError, anyio.ClosedResourceError):
+            await self._send_stream.send(message)
+        except (anyio.BrokenResourceError, anyio.ClosedResourceError) as e:
             # Consumer went away or stream closed or stream not created; ignore further sends.
+            logger.debug("Failed to send message: consumer disconnected. Error: %s", e)
             pass
 
-    async def close_send(self) -> None:
-        if self.is_created:
+    async def close(self, receive_close_delay: float) -> None:
+        """
+        Closes the send and receive streams gracefully if they were created by the StreamManager.
+        After closing the send stream, it waits for the receive stream to be closed by the consumer. If the
+        consumer does not close the receive stream, it will be closed after the delay.
+
+        Args:
+            receive_close_delay: Delay to wait for the receive stream to be closed by the consumer.
+        """
+        if self._send_stream is not None:
             try:
-                await self.send_stream.aclose()
-            except AttributeError:
-                logger.error("Send stream not created. This is unexpected.", exc_info=True)
+                await self._send_stream.aclose()
             except (anyio.BrokenResourceError, anyio.ClosedResourceError):
-                # Consumer went away or stream closed or stream not created; ignore further sends.
+                pass
+
+        if self._receive_stream is not None:
+            try:
+                with anyio.CancelScope(shield=True):
+                    await anyio.sleep(receive_close_delay)
+                    await self._receive_stream.aclose()
+            except (anyio.BrokenResourceError, anyio.ClosedResourceError):
                 pass
 
 
 # TODO: Add resumability based on Last-Event-ID header on GET method.
 class StreamableHTTPTransport(HTTPTransport[ScopeT]):
-    _ping: int
+    """
+    Adds support for MCP's streamable HTTP transport mechanism.
+    More details @ https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http
 
-    _stack: AsyncExitStack
+    With Streamable HTTP the MCP server can operates as an independent process that can handle multiple
+    client connections using HTTP.
+
+    Security Warning: Security is not provided inbuilt. It is the responsibility of the web framework to
+    provide security.
+    """
+
+    _ping_interval: int
+    _receive_close_delay: float
+
     _tg: TaskGroup | None
 
     RESPONSE_MEDIA_TYPES: frozenset[str] = frozenset[str]([MEDIA_TYPE_JSON, MEDIA_TYPE_SSE])
 
-    def __init__(self, minimcp: MiniMCP[ScopeT], ping: int = DEFAULT_PING_INTERVAL) -> None:
+    def __init__(
+        self,
+        minimcp: MiniMCP[ScopeT],
+        ping_interval: int = 15,
+        receive_close_delay: float = 0.1,
+    ) -> None:
+        """
+        Args:
+            minimcp: The MiniMCP instance to use.
+            ping_interval: The ping interval in seconds to keep the streams alive. By default, it is set to
+                15 seconds based on a widely adopted convention.
+            receive_close_delay: After request handling is complete, wait for these many seconds before
+                automatically closing the receive stream. By default, it is set to 0.1 seconds to allow
+                the consumer to finish draining the stream.
+        """
         super().__init__(minimcp)
-        self._ping = ping
-
-        self._stack = AsyncExitStack()
+        self._ping_interval = ping_interval
+        self._receive_close_delay = receive_close_delay
         self._tg = None
 
     async def __aenter__(self) -> "StreamableHTTPTransport[ScopeT]":
-        await self._stack.__aenter__()
-        self._tg = await self._stack.enter_async_context(anyio.create_task_group())
+        self._tg = await anyio.create_task_group().__aenter__()
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> bool | None:
-        result = await self._stack.__aexit__(exc_type, exc, tb)
-        self._tg = None
-        self._stack = AsyncExitStack()
-        return result
+        if self._tg is not None:
+            logger.debug("Shutting down StreamableHTTPTransport")
+
+            # Cancel all background tasks to prevent hanging on.
+            self._tg.cancel_scope.cancel()
+
+            # Exit the task group
+            result = await self._tg.__aexit__(exc_type, exc, tb)
+
+            if self._tg.cancel_scope.cancelled_caught:
+                logger.warning("Background tasks were cancelled during StreamableHTTPTransport shutdown")
+
+            self._tg = None
+            return result
+        return None
 
     @asynccontextmanager
     async def lifespan(self, _: Any) -> AsyncGenerator[None, None]:
+        """
+        Provides an easy to use lifespan context manager for the StreamableHTTPTransport.
+        """
         async with self:
             yield
 
@@ -124,7 +217,9 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         """
 
         if self._tg is None:
-            raise MCPRuntimeError("StreamableHTTPTransport was not started")
+            raise MCPRuntimeError(
+                "dispatch can only be used inside an 'async with' block or a lifespan of StreamableHTTPTransport"
+            )
 
         logger.debug("Handling HTTP request. Method: %s, Headers: %s", method, headers)
 
@@ -153,7 +248,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         result = await self.dispatch(request.method, request.headers, msg_str, scope)
 
         if isinstance(result.content, MemoryObjectReceiveStream):
-            return EventSourceResponse(result.content, headers=result.headers, ping=self._ping)
+            return EventSourceResponse(result.content, headers=result.headers, ping=self._ping_interval)
 
         return Response(result.content, result.status_code, result.headers, result.media_type)
 
@@ -190,20 +285,26 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         the handler finishes executing.
         """
 
-        stream_manager = StreamManager(self._stack)
-
-        async def send_callback(value: Message) -> None:
-            if await stream_manager.create():
-                task_status.started(MCPHTTPResponse(HTTPStatus.OK, stream_manager.recv_stream, headers=SSE_HEADERS))
-            await stream_manager.send(value)
+        stream_manager = StreamManager(on_create=task_status.started)
+        not_completed = True
 
         try:
-            result = await self._handle_post_request(headers, body, scope, send_callback)
-            if stream_manager.is_created:
+            result = await self._handle_post_request(headers, body, scope, send_callback=stream_manager.create_and_send)
+
+            if stream_manager.is_streaming():
                 if isinstance(result.content, Message):
                     await stream_manager.send(result.content)
             else:
                 task_status.started(result)
+
+            not_completed = False
         finally:
-            # Close send_stream at the end of the task.
-            await stream_manager.close_send()
+            if stream_manager.is_streaming():
+                await stream_manager.close(self._receive_close_delay)
+            elif not_completed:
+                # This should never happen, but provides a fallback to ensure the task is always started.
+                try:
+                    error = MCPRuntimeError("Task was not completed by StreamableHTTPTransport")
+                    task_status.started(self._build_unexpected_error_response(error, body))
+                except RuntimeError as e:
+                    logger.error("Task is not completed: %s", e)

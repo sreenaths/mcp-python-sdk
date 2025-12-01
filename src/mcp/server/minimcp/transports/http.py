@@ -151,15 +151,17 @@ class HTTPTransport(Generic[ScopeT]):
         except Exception as e:
             # Handler shouldn't raise any exceptions other than InvalidMessageError
             # Ideally we should not get here
-            response, error_message = json_rpc.build_error_message(
-                e,
-                body,
-                types.INTERNAL_ERROR,
-                include_stack_trace=True,
-            )
-            logger.exception(f"Unexpected error in {self.__class__.__name__}: {error_message}")
+            return self._build_unexpected_error_response(e, body)
 
-            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, response, MEDIA_TYPE_JSON)
+    def _build_unexpected_error_response(self, error: Exception, body: str) -> MCPHTTPResponse:
+        response, error_message = json_rpc.build_error_message(
+            error,
+            body,
+            types.INTERNAL_ERROR,
+            include_stack_trace=True,
+        )
+        logger.error("Unexpected error in %s: %s", self.__class__.__name__, error_message, exc_info=error)
+        return MCPHTTPResponse(HTTPStatus.INTERNAL_SERVER_ERROR, response, MEDIA_TYPE_JSON)
 
     def _handle_unsupported_request(self) -> MCPHTTPResponse:
         """
