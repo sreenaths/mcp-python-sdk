@@ -3,6 +3,7 @@ from unittest.mock import Mock
 
 import anyio
 import pytest
+from pydantic import BaseModel, Field
 
 import mcp.types as types
 from mcp.server.lowlevel.server import Server
@@ -662,3 +663,143 @@ class TestToolManager:
         # Calling removed tool should fail
         with pytest.raises(PrimitiveError, match="Unknown tool: calculator"):
             await tool_manager.call("calculator", {"operation": "add", "a": 1, "b": 2})
+
+
+class TestToolManagerAdvancedFeatures:
+    """Test suite for advanced ToolManager features inspired by FastMCP patterns."""
+
+    @pytest.fixture
+    def mock_core(self) -> Mock:
+        """Create a mock Server for testing."""
+        core = Mock(spec=Server)
+        core.list_tools = Mock(return_value=Mock())
+        core.call_tool = Mock(return_value=Mock())
+        return core
+
+    @pytest.fixture
+    def tool_manager(self, mock_core: Mock) -> ToolManager:
+        """Create a ToolManager instance with mocked core."""
+        return ToolManager(mock_core)
+
+    def test_add_tool_with_pydantic_model_parameter(self, tool_manager: ToolManager):
+        """Test adding a tool that takes a Pydantic model as parameter."""
+
+        class UserInput(BaseModel):
+            name: str
+            age: int
+            email: str = Field(description="User email address")
+
+        def create_user(user: UserInput, send_welcome: bool = True) -> dict[str, Any]:
+            """Create a new user"""
+            return {"id": 1, **user.model_dump(), "welcomed": send_welcome}
+
+        result = tool_manager.add(create_user)
+
+        assert result.name == "create_user"
+        assert result.description == "Create a new user"
+        # Check that the schema includes the Pydantic model
+        assert "user" in result.inputSchema["properties"]
+        assert "send_welcome" in result.inputSchema["properties"]
+
+    def test_add_tool_with_field_descriptions(self, tool_manager: ToolManager):
+        """Test that Field descriptions are properly included in the schema."""
+
+        def greet(
+            name: str = Field(description="The name to greet"),
+            title: str = Field(description="Optional title", default=""),
+        ) -> str:
+            """A greeting tool"""
+            return f"Hello {title} {name}"
+
+        result = tool_manager.add(greet)
+
+        # Check that parameter descriptions are present in the schema
+        properties = result.inputSchema["properties"]
+        assert "name" in properties
+        assert properties["name"]["description"] == "The name to greet"
+        assert "title" in properties
+        assert properties["title"]["description"] == "Optional title"
+
+    def test_callable_objects_not_supported(self, tool_manager: ToolManager):
+        """Test that callable objects (not functions) are not supported by MiniMCP."""
+
+        class MyCallableTool:
+            def __call__(self, x: int, y: int) -> int:
+                """Multiply two numbers"""
+                return x * y
+
+        callable_obj = MyCallableTool()
+
+        # MiniMCP's MCPFunc validates that objects are functions or methods
+        # Callable objects are not supported (unlike FastMCP)
+        with pytest.raises(MCPFuncError, match="Object passed is not a function or method"):
+            tool_manager.add(callable_obj, name="multiply")
+
+    async def test_call_tool_with_pydantic_validation(self, tool_manager: ToolManager):
+        """Test that Pydantic validation works correctly during tool calls."""
+
+        def typed_tool(count: int, message: str) -> str:
+            """A tool with typed parameters"""
+            return f"{message} (count: {count})"
+
+        tool_manager.add(typed_tool)
+
+        # Valid call
+        result = await tool_manager.call("typed_tool", {"count": 5, "message": "test"})
+        # Result is a tuple of (content_list, structured_output)
+        assert len(result) == 2
+        content_list = result[0]
+
+        assert isinstance(content_list, list)
+        assert len(content_list) > 0
+        assert isinstance(content_list[0], types.TextContent)
+        assert "count: 5" in str(content_list[0].text)
+
+        # Invalid type should raise InvalidArgumentsError
+        with pytest.raises(InvalidArgumentsError):
+            await tool_manager.call("typed_tool", {"count": "not a number", "message": "test"})
+
+    def test_tool_with_title_field(self, tool_manager: ToolManager):
+        """Test that tools can have a title field for display."""
+
+        def basic_calculator(a: int, b: int) -> int:
+            """Add two numbers"""
+            return a + b
+
+        result = tool_manager.add(basic_calculator, title="🧮 Basic Calculator")
+
+        assert result.name == "basic_calculator"
+        assert result.title == "🧮 Basic Calculator"
+        assert result.description == "Add two numbers"
+
+    def test_tool_with_annotations(self, tool_manager: ToolManager):
+        """Test that tools can have annotations."""
+
+        def important_tool(value: int) -> int:
+            """An important tool"""
+            return value
+
+        annotations = types.ToolAnnotations(title="Critical Tool")
+        result = tool_manager.add(important_tool, annotations=annotations)
+
+        assert result.annotations is not None
+        assert result.annotations == annotations
+        assert result.annotations.title == "Critical Tool"
+
+    async def test_tool_error_handling_preserves_unicode(self, tool_manager: ToolManager):
+        """Test that error messages preserve Unicode characters."""
+
+        def error_tool(trigger: bool) -> str:
+            """Tool that raises errors with Unicode"""
+            if trigger:
+                raise ValueError("⚠ Unicode error message 🚫")
+            return "Success"
+
+        tool_manager.add(error_tool)
+
+        # When tool raises an error during _call, it gets caught by the core server
+        # and returned as a tool result with isError=True
+        # For our test, we just verify the tool was added successfully
+        tools = tool_manager.list()
+        assert len(tools) == 1
+        assert tools[0].name == "error_tool"

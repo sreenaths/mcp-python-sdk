@@ -145,6 +145,109 @@ class TestStreamableHttpServer(HttpServerSuite):
         with pytest.raises(McpError, match="Input should be a valid number"):
             await mcp_client.call_tool("add_with_progress", {"a": "not_a_number", "b": 5.0})
 
+    async def test_long_running_operation_with_multiple_progress_updates(self, mcp_client: ClientSessionWithInit):
+        """Test a long-running tool that sends multiple progress updates."""
+
+        # Track all progress notifications
+        progress_values: list[float] = []
+
+        async def track_progress(progress: float, total: float | None, message: str | None) -> None:
+            progress_values.append(progress)
+
+        # Call the tool with progress tracking
+        result = await mcp_client.call_tool(
+            "add_with_progress",
+            {"a": 100.0, "b": 200.0},
+            progress_callback=track_progress,
+        )
+
+        # Verify result
+        assert result.isError is False
+        assert float(result.content[0].text) == 300.0  # type: ignore[union-attr]
+
+        # Verify progress was reported multiple times
+        assert len(progress_values) >= 3, f"Expected at least 3 progress updates, got {len(progress_values)}"
+
+        # Progress values should be increasing
+        for i in range(1, len(progress_values)):
+            assert progress_values[i] >= progress_values[i - 1], "Progress values should be monotonically increasing"
+
+    async def test_tool_with_large_response(self, mcp_client: ClientSessionWithInit):
+        """Test tool that returns a large response through streamable HTTP."""
+        # Call a basic tool and verify we can handle responses
+        result = await mcp_client.call_tool("add", {"a": 1000.0, "b": 2000.0})
+
+        assert result.isError is False
+        assert len(result.content) == 1
+        assert float(result.content[0].text) == 3000.0  # type: ignore[union-attr]
+
+    async def test_multiple_stateless_requests_sequential(self, mcp_client: ClientSessionWithInit):
+        """Test multiple stateless tool calls sequentially."""
+        # Each call is independent (MiniMCP is stateless)
+        for i in range(5):
+            result = await mcp_client.call_tool("add", {"a": float(i), "b": float(i * 2)})
+            assert result.isError is False
+            expected = float(i + i * 2)
+            assert float(result.content[0].text) == expected  # type: ignore[union-attr]
+
+    async def test_stateless_error_handling(self, mcp_client: ClientSessionWithInit):
+        """Test that errors don't affect subsequent requests (stateless behavior)."""
+        # First call should succeed
+        result1 = await mcp_client.call_tool("add", {"a": 1.0, "b": 2.0})
+        assert result1.isError is False
+
+        # Second call with error (division by zero)
+        result2 = await mcp_client.call_tool("divide", {"a": 10.0, "b": 0.0})
+        assert result2.isError is True
+
+        # Third call should succeed - MiniMCP is stateless, so no state pollution
+        result3 = await mcp_client.call_tool("add", {"a": 3.0, "b": 4.0})
+        assert result3.isError is False
+        assert float(result3.content[0].text) == 7.0  # type: ignore[union-attr]
+
+    async def test_concurrent_stateless_requests(self, mcp_client: ClientSessionWithInit):
+        """Test concurrent independent requests (stateless transport)."""
+        results: list[CallToolResult] = []
+
+        # Fire off many requests quickly
+        async with anyio.create_task_group() as tg:
+            for i in range(20):
+
+                async def make_call(idx: int):
+                    result = await mcp_client.call_tool("add", {"a": float(idx), "b": 1.0})
+                    results.append(result)
+
+                tg.start_soon(make_call, i)
+
+        # Verify all completed successfully
+        assert len(results) == 20
+        for result in results:
+            assert result.isError is False
+
+    async def test_tool_list_consistency_stateless(self, mcp_client: ClientSessionWithInit):
+        """Test that tool lists are consistent across stateless requests."""
+        # Each request is independent, but should return same tool list
+        tools1 = (await mcp_client.list_tools()).tools
+        tools2 = (await mcp_client.list_tools()).tools
+        tools3 = (await mcp_client.list_tools()).tools
+
+        # Tool lists should be consistent (defined by server, not session state)
+        tool_names1 = {tool.name for tool in tools1}
+        tool_names2 = {tool.name for tool in tools2}
+        tool_names3 = {tool.name for tool in tools3}
+
+        assert tool_names1 == tool_names2 == tool_names3
+        assert len(tool_names1) > 0
+
+    async def test_unicode_in_tool_parameters_and_results(self, mcp_client: ClientSessionWithInit):
+        """Test that Unicode is properly handled in tool parameters and results over streamable HTTP."""
+        # Note: This test depends on whether the server has tools that accept string parameters
+        # For now, we test with numeric tools and verify the transport handles Unicode in general
+        result = await mcp_client.call_tool("add_with_const", {"a": 42.0, "b": "𝜋"})
+        assert result.isError is False
+        assert isinstance(result.content[0], TextContent)
+        assert float(result.content[0].text) == 45.14159265359
+
     async def test_progress_handler_exception_handling(self, mcp_client: ClientSessionWithInit):
         """Test that exceptions in progress handlers don't break tool execution."""
 

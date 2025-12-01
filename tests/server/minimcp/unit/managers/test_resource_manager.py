@@ -803,6 +803,188 @@ class TestResourceManager:
         with pytest.raises(ResourceNotFoundError, match="Resource not found"):
             resource_manager._find_matching_resource("file://nonexistent.txt")
 
+
+class TestResourceManagerAdvancedFeatures:
+    """Test suite for advanced ResourceManager features inspired by FastMCP patterns."""
+
+    @pytest.fixture
+    def mock_core(self) -> Mock:
+        """Create a mock Server for testing."""
+        core = Mock(spec=Server)
+        core.list_resources = Mock(return_value=Mock())
+        core.list_resource_templates = Mock(return_value=Mock())
+        core.read_resource = Mock(return_value=Mock())
+        return core
+
+    @pytest.fixture
+    def resource_manager(self, mock_core: Mock) -> ResourceManager:
+        """Create a ResourceManager instance with mocked core."""
+        return ResourceManager(mock_core)
+
+    def test_add_resource_with_title_field(self, resource_manager: ResourceManager):
+        """Test that resources can have a title field for display."""
+
+        def config_resource() -> str:
+            """Configuration data"""
+            return '{"key": "value"}'
+
+        result = resource_manager.add(config_resource, uri="config://app.json", title="📄 App Configuration")
+
+        assert isinstance(result, types.Resource)
+        assert result.name == "config_resource"
+        assert result.title == "📄 App Configuration"
+        assert str(result.uri) == "config://app.json"
+
+    def test_add_resource_with_annotations(self, resource_manager: ResourceManager):
+        """Test that resources can have annotations."""
+        from mcp.types import Annotations
+
+        def important_resource() -> str:
+            """Important data"""
+            return "critical data"
+
+        annotations = Annotations(audience=["assistant"], priority=1.0)
+        result = resource_manager.add(
+            important_resource,
+            uri="data://important",
+            annotations=annotations,
+        )
+
+        assert result.annotations is not None
+        assert result.annotations == annotations
+        assert result.annotations.priority == 1.0
+
+    def test_add_resource_template_with_title(self, resource_manager: ResourceManager):
+        """Test that resource templates can have titles."""
+
+        def file_resource(path: str) -> str:
+            """Read file content"""
+            return f"Content of {path}"
+
+        result = resource_manager.add(
+            file_resource,
+            uri="file:///{path}",
+            title="File System Access",
+        )
+
+        assert isinstance(result, types.ResourceTemplate)
+        assert result.title == "File System Access"
+        assert result.uriTemplate == "file:///{path}"
+
+    async def test_resource_with_unicode_content(self, resource_manager: ResourceManager):
+        """Test that resources handle Unicode in content (not URIs, which must be ASCII)."""
+
+        def unicode_resource() -> str:
+            """Resource with Unicode content"""
+            return "Unicode content: लेखक ✍️"
+
+        # URIs must be ASCII-compatible per RFC 3986
+        resource_manager.add(unicode_resource, uri="docs://unicode-test")
+
+        result = await resource_manager.read("docs://unicode-test")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "लेखक" in str(result[0].content)
+        assert "✍️" in str(result[0].content)
+
+    async def test_resource_template_with_unicode_parameters(self, resource_manager: ResourceManager):
+        """Test resource template with Unicode parameter values."""
+
+        def doc_resource(doc_name: str) -> str:
+            """Get document"""
+            return f"Document: {doc_name}"
+
+        resource_manager.add(doc_resource, uri="docs://{doc_name}")
+
+        # Read with Unicode parameter
+        result = await resource_manager.read("docs://समाचार")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "समाचार" in str(result[0].content)
+
+    def test_resource_with_metadata(self, resource_manager: ResourceManager):
+        """Test that resources can have metadata."""
+
+        def meta_resource() -> str:
+            """Resource with metadata"""
+            return "data"
+
+        meta = {"version": "2.0", "source": "database"}
+        result = resource_manager.add(meta_resource, uri="db://data", meta=meta)
+
+        assert result.meta is not None
+        assert result.meta == meta
+        assert result.meta["version"] == "2.0"
+
+    async def test_resource_with_mime_type_json(self, resource_manager: ResourceManager):
+        """Test resource with explicit JSON MIME type."""
+
+        def json_resource() -> dict[str, Any]:
+            """Return JSON data"""
+            return {"status": "ok", "count": 42}
+
+        resource_manager.add(json_resource, uri="api://status", mime_type="application/json")
+
+        result = await resource_manager.read("api://status")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert result[0].mime_type == "application/json"
+        assert "status" in str(result[0].content)
+        assert "ok" in str(result[0].content)
+
+    async def test_resource_with_binary_content(self, resource_manager: ResourceManager):
+        """Test resource that returns binary content."""
+
+        def binary_resource() -> bytes:
+            """Return binary data"""
+            return b"Binary content \x00\x01\x02"
+
+        resource_manager.add(binary_resource, uri="data://binary", mime_type="application/octet-stream")
+
+        result = await resource_manager.read("data://binary")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0].content, bytes)
+        assert result[0].content == b"Binary content \x00\x01\x02"
+        assert result[0].mime_type == "application/octet-stream"
+
+    async def test_resource_template_with_multiple_parameters(self, resource_manager: ResourceManager):
+        """Test resource template with multiple parameters."""
+
+        def multi_param_resource(category: str, item_id: str, format: str) -> str:
+            """Resource with multiple parameters"""
+            return f"Category: {category}, ID: {item_id}, Format: {format}"
+
+        resource_manager.add(multi_param_resource, uri="data://{category}/{item_id}.{format}")
+
+        result = await resource_manager.read("data://products/123.json")
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert "Category: products" in str(result[0].content)
+        assert "ID: 123" in str(result[0].content)
+        assert "Format: json" in str(result[0].content)
+
+    def test_resource_with_custom_name_override(self, resource_manager: ResourceManager):
+        """Test adding resource with custom name override."""
+
+        def generic_func() -> str:
+            return "data"
+
+        result = resource_manager.add(
+            generic_func,
+            uri="custom://data",
+            name="my_custom_resource_name",
+            description="Custom description",
+        )
+
+        assert result.name == "my_custom_resource_name"
+        assert result.description == "Custom description"
+
     async def test_full_workflow(self, resource_manager: ResourceManager):
         """Test a complete workflow: add, list, read, remove."""
 

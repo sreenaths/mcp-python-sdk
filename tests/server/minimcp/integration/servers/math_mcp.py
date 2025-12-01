@@ -9,6 +9,22 @@ from pydantic import Field
 
 from mcp.server.minimcp import MiniMCP
 
+
+MATH_CONSTANTS = {
+    "pi": 3.14159265359,
+    "𝜋": 3.14159265359,
+
+    "e": 2.71828182846,
+    "𝚎": 2.71828182846,
+
+    "golden_ratio": 1.61803398875,
+    "𝚽": 1.61803398875,
+
+    "sqrt_2": 1.41421356237,
+    "√2": 1.41421356237,
+}
+
+
 # Create a simple math server for testing directly in this file
 math_mcp = MiniMCP[Any](
     name="TestMathServer",
@@ -22,6 +38,19 @@ math_mcp = MiniMCP[Any](
 @math_mcp.tool()
 def add(a: float = Field(description="The first number"), b: float = Field(description="The second number")) -> float:
     """Add two numbers"""
+    return a + b
+
+
+@math_mcp.tool()
+def add_with_const(
+    a: float | str = Field(description="The first value"),
+    b: float | str = Field(description="The second value")
+) -> float:
+    """Add two values. Values can be numbers or mathematical constants."""
+    if isinstance(a, str):
+        a = float(MATH_CONSTANTS[a])
+    if isinstance(b, str):
+        b = float(MATH_CONSTANTS[b])
     return a + b
 
 
@@ -80,8 +109,6 @@ Include:
 
 
 # -- Resources --
-MATH_CONSTANTS = {"pi": 3.14159265359, "e": 2.71828182846, "golden_ratio": 1.61803398875, "sqrt_2": 1.41421356237}
-
 
 @math_mcp.resource("math://constants")
 def get_math_constants() -> dict[str, float]:

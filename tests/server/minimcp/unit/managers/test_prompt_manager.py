@@ -753,3 +753,141 @@ class TestPromptManager:
         with pytest.raises(MCPRuntimeError, match="Error getting prompt async_failing_prompt") as exc_info:
             await prompt_manager.get("async_failing_prompt", {"should_fail": True})  # type: ignore[arg-type]
         assert isinstance(exc_info.value.__cause__, RuntimeError)
+
+
+class TestPromptManagerAdvancedFeatures:
+    """Test suite for advanced PromptManager features inspired by FastMCP patterns."""
+
+    @pytest.fixture
+    def mock_core(self) -> Mock:
+        """Create a mock Server for testing."""
+        core = Mock(spec=Server)
+        core.list_prompts = Mock(return_value=Mock())
+        core.get_prompt = Mock(return_value=Mock())
+        return core
+
+    @pytest.fixture
+    def prompt_manager(self, mock_core: Mock) -> PromptManager:
+        """Create a PromptManager instance with mocked core."""
+        return PromptManager(mock_core)
+
+    def test_add_prompt_with_title_field(self, prompt_manager: PromptManager):
+        """Test that prompts can have a title field for display."""
+
+        def code_review(code: str) -> str:
+            """Review code for issues"""
+            return f"Reviewing: {code}"
+
+        result = prompt_manager.add(code_review, title="🔍 Code Review Assistant")
+
+        assert result.name == "code_review"
+        assert result.title == "🔍 Code Review Assistant"
+        assert result.description == "Review code for issues"
+
+    def test_add_prompt_with_field_descriptions(self, prompt_manager: PromptManager):
+        """Test that Field descriptions work in prompt parameters."""
+        from pydantic import Field
+
+        def detailed_prompt(
+            topic: str = Field(description="The main topic to discuss"),
+            context: str = Field(description="Additional context", default=""),
+        ) -> str:
+            """A detailed prompt"""
+            return f"Let's discuss {topic}. Context: {context}"
+
+        result = prompt_manager.add(detailed_prompt)
+
+        assert result.arguments is not None
+
+        # Check that parameter descriptions are present
+        assert len(result.arguments) == 2
+        args_by_name = {arg.name: arg for arg in result.arguments}
+
+        assert "topic" in args_by_name
+        assert args_by_name["topic"].description == "The main topic to discuss"
+        assert args_by_name["topic"].required is True
+
+        assert "context" in args_by_name
+        assert args_by_name["context"].description == "Additional context"
+        assert args_by_name["context"].required is False
+
+    async def test_prompt_with_unicode_content(self, prompt_manager: PromptManager):
+        """Test that prompts handle Unicode content correctly."""
+
+        def unicode_prompt(topic: str) -> str:
+            """Prompt with Unicode characters"""
+            return f"{topic} के बारे में एक अनुच्छेद लिखें"
+
+        prompt_manager.add(unicode_prompt, description="अनुच्छेद लेखक ✍️")
+
+        result = await prompt_manager.get("unicode_prompt", {"topic": "🎨 चित्रकला"})
+
+        assert len(result.messages) == 1
+        assert isinstance(result.messages[0].content, types.TextContent)
+        assert result.messages[0].content.text == "🎨 चित्रकला के बारे में एक अनुच्छेद लिखें"
+        assert result.description == "अनुच्छेद लेखक ✍️"
+
+    async def test_prompt_returns_multiple_messages(self, prompt_manager: PromptManager):
+        """Test prompt that returns multiple messages."""
+
+        def multi_message_prompt(topic: str) -> list[str]:
+            """Prompt that returns multiple messages"""
+            return [
+                f"First message about {topic}",
+                f"Second message about {topic}",
+                f"Third message about {topic}",
+            ]
+
+        prompt_manager.add(multi_message_prompt)
+
+        result = await prompt_manager.get("multi_message_prompt", {"topic": "testing"})
+
+        assert len(result.messages) == 3
+        for message in result.messages:
+            assert "testing" in str(message)
+
+    def test_prompt_with_metadata(self, prompt_manager: PromptManager):
+        """Test that prompts can have metadata."""
+
+        def meta_prompt(topic: str) -> str:
+            """Prompt with metadata"""
+            return f"Discuss {topic}"
+
+        meta = {"version": "1.0", "category": "discussion"}
+        result = prompt_manager.add(meta_prompt, meta=meta)
+
+        assert result.meta is not None
+        assert result.meta == meta
+        assert result.meta["version"] == "1.0"
+        assert result.meta["category"] == "discussion"
+
+    def test_add_prompt_with_custom_name_and_description(self, prompt_manager: PromptManager):
+        """Test adding prompt with custom name and description overrides."""
+
+        def generic_func(input_text: str) -> str:
+            return f"Processed: {input_text}"
+
+        result = prompt_manager.add(
+            generic_func,
+            name="custom_prompt_name",
+            description="Custom description for this prompt",
+        )
+
+        assert result.name == "custom_prompt_name"
+        assert result.description == "Custom description for this prompt"
+
+    async def test_prompt_with_no_arguments(self, prompt_manager: PromptManager):
+        """Test prompt with no arguments."""
+
+        def no_args_prompt() -> str:
+            """A prompt with no arguments"""
+            return "This is a static prompt"
+
+        result = prompt_manager.add(no_args_prompt)
+
+        assert result.arguments is not None
+        assert len(result.arguments) == 0
+
+        # Should be callable with empty args
+        get_result = await prompt_manager.get("no_args_prompt", None)
+        assert len(get_result.messages) == 1

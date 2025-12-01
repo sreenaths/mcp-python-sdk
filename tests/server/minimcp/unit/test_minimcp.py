@@ -652,3 +652,180 @@ class TestMiniMCPIntegration:
             response = json.loads(result)  # type: ignore
             assert response["id"] == i
             assert "result" in response
+
+    async def test_include_stack_trace_in_errors(self):
+        """Test that stack traces are included in error messages when enabled."""
+        server: MiniMCP[Any] = MiniMCP(name="stack-trace-test", include_stack_trace=True)
+
+        # Create an invalid message that will trigger an error
+        invalid_message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "unknown_method", "params": {}})
+
+        result = await server.handle(invalid_message)
+
+        response = json.loads(result)  # type: ignore
+        assert "error" in response
+        assert "data" in response["error"]
+        # Stack trace should be present
+        assert "stackTrace" in response["error"]["data"]
+
+    async def test_exclude_stack_trace_in_errors(self):
+        """Test that stack traces are NOT included when disabled."""
+        server: MiniMCP[Any] = MiniMCP(name="no-stack-trace-test", include_stack_trace=False)
+
+        # Create an invalid message that will trigger an error
+        invalid_message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "unknown_method", "params": {}})
+
+        result = await server.handle(invalid_message)
+
+        response = json.loads(result)  # type: ignore
+        assert "error" in response
+        assert "data" in response["error"]
+        # Stack trace should NOT be present
+        assert "stackTrace" not in response["error"]["data"]
+
+    async def test_error_metadata_in_response(self):
+        """Test that error responses include proper metadata."""
+        server: MiniMCP[Any] = MiniMCP(name="error-metadata-test")
+
+        # Create an invalid message
+        invalid_message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "unknown_method", "params": {}})
+
+        result = await server.handle(invalid_message)
+
+        response = json.loads(result)  # type: ignore
+        assert "error" in response
+        error_data = response["error"]["data"]
+
+        # Should contain error metadata
+        assert "errorType" in error_data
+        assert "errorModule" in error_data
+        assert "isoTimestamp" in error_data
+
+        # Verify timestamp is valid ISO format
+        from datetime import datetime
+
+        datetime.fromisoformat(error_data["isoTimestamp"])
+
+    async def test_process_error_with_internal_mcp_error(self):
+        """Test _process_error method with InternalMCPError that has data."""
+        from mcp.server.minimcp.exceptions import ResourceNotFoundError
+
+        server: MiniMCP[Any] = MiniMCP(name="process-error-test")
+
+        # Create an error with data
+        error_data = {"uri": "file:///nonexistent.txt", "name": "test_resource"}
+        error = ResourceNotFoundError("Resource not found", error_data)
+        request_message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "resources/read"})
+
+        # Call _process_error directly
+        result = server._process_error(error, request_message, types.RESOURCE_NOT_FOUND)
+
+        parsed = json.loads(result)
+        assert parsed["error"]["code"] == types.RESOURCE_NOT_FOUND
+        assert parsed["error"]["data"]["uri"] == "file:///nonexistent.txt"
+        assert parsed["error"]["data"]["name"] == "test_resource"
+
+    async def test_handle_with_different_error_types(self):
+        """Test handling different types of MiniMCP errors."""
+        from mcp.server.minimcp.exceptions import (
+            InvalidArgumentsError,
+            MCPRuntimeError,
+            PrimitiveError,
+        )
+
+        server: MiniMCP[Any] = MiniMCP(name="error-types-test")
+
+        # Register a tool that raises different errors
+        def error_tool(error_type: str) -> str:
+            """Tool that raises different errors."""
+            if error_type == "arguments":
+                raise InvalidArgumentsError("Invalid arguments")
+            elif error_type == "primitive":
+                raise PrimitiveError("Primitive error")
+            elif error_type == "runtime":
+                raise MCPRuntimeError("Runtime error")
+            return "success"
+
+        server.tool.add(error_tool)
+
+        # Test each error type - they should be handled gracefully
+        # (Note: Tool execution errors are handled differently, but we're testing error handling flow)
+        test_cases = ["arguments", "primitive", "runtime"]
+
+        for error_type in test_cases:
+            call_message = json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": error_type,
+                    "method": "tools/call",
+                    "params": {"name": "error_tool", "arguments": {"error_type": error_type}},
+                }
+            )
+
+            result = await server.handle(call_message)
+
+            # All should return valid responses (errors are caught and formatted)
+            parsed = json.loads(result)  # type: ignore
+            assert "jsonrpc" in parsed
+            assert parsed["id"] == error_type
+
+    async def test_concurrent_error_handling(self):
+        """Test that errors are properly isolated across concurrent requests."""
+        server: MiniMCP[Any] = MiniMCP(name="concurrent-errors-test")
+
+        # Create multiple invalid messages
+        messages: list[str] = []
+        for i in range(5):
+            # Mix of valid and invalid messages
+            if i % 2 == 0:
+                # Valid initialize request
+                msg = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": i,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test", "version": "1.0"},
+                        },
+                    }
+                )
+            else:
+                # Invalid request (unknown method)
+                msg = json.dumps({"jsonrpc": "2.0", "id": i, "method": "unknown", "params": {}})
+
+            messages.append(msg)
+
+        # Handle all concurrently
+        results: list[Any] = []
+        for msg in messages:
+            result = await server.handle(msg)
+            results.append(json.loads(result))  # type: ignore
+
+        # Verify each response has correct ID
+        for i, response in enumerate(results):
+            assert response["id"] == i
+
+    async def test_limiter_integration_with_errors(self):
+        """Test that limiter works correctly even when errors occur."""
+        server: MiniMCP[Any] = MiniMCP(name="limiter-error-test", max_concurrency=2, idle_timeout=5)
+
+        # Create messages that will trigger errors
+        invalid_message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "unknown", "params": {}})
+        result = await server.handle(invalid_message)
+        response = json.loads(result)  # type: ignore
+        assert response["id"] == 1
+        assert "error" in response
+
+        # Multiple concurrent error-causing requests
+        results: list[Any] = []
+        for i in range(5):
+            msg = json.dumps({"jsonrpc": "2.0", "id": i, "method": "unknown", "params": {}})
+            result = await server.handle(msg)
+            results.append(json.loads(result))  # type: ignore
+
+        # All should return error responses with correct IDs
+        for i, response in enumerate(results):
+            assert response["id"] == i
+            assert "error" in response

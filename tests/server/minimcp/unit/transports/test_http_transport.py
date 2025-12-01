@@ -1,19 +1,37 @@
 import json
 from http import HTTPStatus
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 
 import pytest
 
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.minimcp_types import NoMessage
 from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, _RequestValidationError
+from mcp.shared.version import LATEST_PROTOCOL_VERSION
 
 pytestmark = pytest.mark.anyio
 
 
 class TestHTTPTransport:
     """Test suite for HTTP transport."""
+
+    @pytest.fixture
+    def accept_content_types(self) -> str:
+        return "application/json"
+
+    @pytest.fixture
+    def request_headers(self, accept_content_types: str) -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Accept": accept_content_types,
+            "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION,
+        }
+
+    @pytest.fixture
+    def valid_body(self) -> str:
+        """Create a valid JSON-RPC request body."""
+        return json.dumps({"jsonrpc": "2.0", "method": "test_method", "params": {"test": "value"}, "id": 1})
 
     @pytest.fixture
     def mock_handler(self) -> AsyncMock:
@@ -26,25 +44,22 @@ class TestHTTPTransport:
         mcp.handle = mock_handler
         return HTTPTransport[Any](mcp)
 
-    valid_headers: dict[str, str] = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "MCP-Protocol-Version": "2025-06-18",
-    }
-    valid_body: str = json.dumps({"jsonrpc": "2.0", "method": "test_method", "params": {"test": "value"}, "id": 1})
-
-    async def test_dispatch_post_request_success(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_post_request_success(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test successful POST request handling."""
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == '{"jsonrpc": "2.0", "result": "success", "id": 1}'
         assert result.media_type == MEDIA_TYPE_JSON
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_dispatch_unsupported_method(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_unsupported_method(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling of unsupported HTTP methods."""
-        result = await transport.dispatch("GET", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("GET", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.METHOD_NOT_ALLOWED
         assert result.headers is not None
@@ -52,135 +67,155 @@ class TestHTTPTransport:
         assert "POST" in result.headers["Allow"]
         mock_handler.assert_not_called()
 
-    async def test_dispatch_invalid_content_type(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_invalid_content_type(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+    ):
         """Test handling of invalid content type."""
         headers = {
             "Content-Type": "text/plain",
-            "Accept": "application/json",
+            "Accept": accept_content_types,
         }
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         assert result.status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
         assert result.content is not None
         assert "Unsupported Media Type" in str(result.content)
         mock_handler.assert_not_called()
 
-    async def test_dispatch_invalid_accept_header(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_invalid_accept_header(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
+    ):
         """Test handling of invalid Accept header."""
         headers = {
             "Content-Type": "application/json",
             "Accept": "text/plain",
         }
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         assert result.status_code == HTTPStatus.NOT_ACCEPTABLE
         assert result.content is not None
         assert "Not Acceptable" in str(result.content)
         mock_handler.assert_not_called()
 
-    async def test_dispatch_no_message_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_no_message_response(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling when handler returns NoMessage."""
         mock_handler.return_value = NoMessage.NOTIFICATION
 
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.ACCEPTED
         assert result.content is None or isinstance(result.content, NoMessage)
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_dispatch_error_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_error_response(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling of JSON-RPC error responses."""
         error_response = json.dumps(
             {"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid Request"}, "id": 1}
         )
         mock_handler.return_value = error_response
 
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
         assert result.media_type == MEDIA_TYPE_JSON
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_dispatch_internal_error_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_internal_error_response(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling of internal error responses."""
         error_response = json.dumps({"jsonrpc": "2.0", "error": {"code": -32603, "message": "Internal error"}, "id": 1})
         mock_handler.return_value = error_response
 
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
         assert result.media_type == MEDIA_TYPE_JSON
 
-    async def test_dispatch_method_not_found_error(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_method_not_found_error(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling of method not found errors."""
         error_response = json.dumps(
             {"jsonrpc": "2.0", "error": {"code": -32601, "message": "Method not found"}, "id": 1}
         )
         mock_handler.return_value = error_response
 
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
         assert result.media_type == MEDIA_TYPE_JSON
 
-    async def test_dispatch_unknown_error_code(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_unknown_error_code(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling of unknown error codes."""
         error_response = json.dumps({"jsonrpc": "2.0", "error": {"code": -99999, "message": "Unknown error"}, "id": 1})
         mock_handler.return_value = error_response
 
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == error_response
         assert result.media_type == MEDIA_TYPE_JSON
 
-    async def test_dispatch_malformed_response(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_malformed_response(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling of malformed JSON responses."""
         mock_handler.return_value = "not valid json"
 
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         # Malformed JSON should result in 500 Internal Server Error
         assert result.status_code == HTTPStatus.OK
         assert result.content == "not valid json"
         assert result.media_type == MEDIA_TYPE_JSON
 
-    async def test_dispatch_missing_headers(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_missing_headers(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
+    ):
         """Test handling with minimal headers."""
         headers: dict[str, str] = {}
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         # Should fail due to missing Accept header first (checked before Content-Type)
         assert result.status_code == HTTPStatus.NOT_ACCEPTABLE
         mock_handler.assert_not_called()
 
-    async def test_dispatch_protocol_version_validation(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_protocol_version_validation(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+    ):
         """Test protocol version validation."""
         headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": accept_content_types,
             "MCP-Protocol-Version": "invalid-version",
         }
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         assert result.status_code == HTTPStatus.BAD_REQUEST
         assert "Unsupported protocol version" in str(result.content)
         mock_handler.assert_not_called()
 
     async def test_dispatch_initialize_request_skips_version_check(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, accept_content_types: str
     ):
         """Test that initialize requests skip protocol version validation."""
         headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": accept_content_types,
             # No protocol version header
         }
 
@@ -191,70 +226,82 @@ class TestHTTPTransport:
         result = await transport.dispatch("POST", headers, initialize_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(initialize_body, None, None)
+        mock_handler.assert_called_once_with(initialize_body, ANY, None)
 
-    async def test_dispatch_default_protocol_version(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_default_protocol_version(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+    ):
         """Test that default protocol version is used when header is missing."""
         headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": accept_content_types,
             # No MCP-Protocol-Version header - should use default
         }
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_dispatch_content_type_with_charset(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_content_type_with_charset(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+    ):
         """Test Content-Type header with charset parameter."""
         headers: dict[str, str] = {
             "Content-Type": "application/json; charset=utf-8",
-            "Accept": "application/json",
+            "Accept": accept_content_types,
             "MCP-Protocol-Version": "2025-06-18",
         }
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_dispatch_accept_header_with_quality(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_accept_header_with_quality(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
+    ):
         """Test Accept header with quality values."""
         headers: dict[str, str] = {
             "Content-Type": "application/json",
-            "Accept": "application/json; q=0.9, text/plain; q=0.1",
+            "Accept": "application/json; q=0.9, text/plain; q=0.1, text/event-stream; q=0.2",
             "MCP-Protocol-Version": "2025-06-18",
         }
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_dispatch_case_insensitive_headers(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_dispatch_case_insensitive_headers(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+    ):
         """Test that header checking is case insensitive."""
         headers: dict[str, str] = {
             "Content-Type": "APPLICATION/JSON",
-            "Accept": "APPLICATION/JSON",
+            "Accept": accept_content_types.upper(),
             "MCP-Protocol-Version": "2025-06-18",
         }
 
-        result = await transport.dispatch("POST", headers, self.valid_body)
+        result = await transport.dispatch("POST", headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_handle_post_request_direct(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_handle_post_request_direct(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test the _handle_post_request method directly."""
-        result = await transport._handle_post_request(self.valid_headers, self.valid_body, None)
+        result = await transport._handle_post_request(request_headers, valid_body, None)
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == '{"jsonrpc": "2.0", "result": "success", "id": 1}'
         assert result.media_type == MEDIA_TYPE_JSON
-        mock_handler.assert_called_once_with(self.valid_body, None, None)
+        mock_handler.assert_called_once_with(valid_body, ANY, None)
 
-    async def test_response_without_id(self, transport: HTTPTransport[Any], mock_handler: AsyncMock):
+    async def test_response_without_id(
+        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+    ):
         """Test handling of responses without ID (notifications)."""
         notification_response = json.dumps(
             {
@@ -265,11 +312,19 @@ class TestHTTPTransport:
         )
         mock_handler.return_value = notification_response
 
-        result = await transport.dispatch("POST", self.valid_headers, self.valid_body)
+        result = await transport.dispatch("POST", request_headers, valid_body)
 
         assert result.status_code == HTTPStatus.OK
         assert result.content == notification_response
         assert result.media_type == MEDIA_TYPE_JSON
+
+
+class TestHTTPTransportHeaderValidation:
+    """Test suite for HTTP transport header validation."""
+
+    @pytest.fixture
+    def transport(self) -> HTTPTransport[Any]:
+        return HTTPTransport[Any](AsyncMock(spec=MiniMCP[Any]))
 
     def test_validate_accept_headers_valid(self, transport: HTTPTransport[Any]):
         """Test validate accept headers with valid headers."""
