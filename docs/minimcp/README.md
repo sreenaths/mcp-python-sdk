@@ -27,6 +27,8 @@ _MiniMCP is designed with simplicity at its core, it exposes a single asynchrono
     - [Resource Manager](#resource-manager)
   - [Context Manager](#context-manager)
 - [Transports](#transports)
+- [Testing](#testing)
+- [Error Handling](#error-handling)
 - [Examples](#examples)
   - [Claude Desktop](#claude-desktop)
 
@@ -277,6 +279,12 @@ await starlette.streamable_http_transport(mcp.handle, request)
 ```
 
 For more details on supported transports, please check the [specification compliance](../docs/minimcp-transport-specification-compliance.md) document.
+
+## Testing
+
+MiniMCP comes with a comprehensive test suite of **654 tests** covering unit and integration testing across all components. The test suite validates MCP specification compliance, error handling, edge cases, and real-world scenarios.
+
+For detailed information about the test suite, coverage, and running tests, see the [Testing Documentation](./testing.md).
 
 ## Error Handling
 
