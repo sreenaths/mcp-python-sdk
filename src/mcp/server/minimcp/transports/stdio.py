@@ -73,7 +73,7 @@ class StdioTransport(Generic[ScopeT]):
         This function validates that constraint before writing.
 
         Args:
-            response_msg: The message to write into stdout
+            response_msg: The message to write to stdout.
 
         Raises:
             ValueError: If the message contains embedded newlines (violates stdio spec).

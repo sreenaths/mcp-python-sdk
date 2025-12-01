@@ -67,6 +67,15 @@ class HTTPTransport(Generic[ScopeT]):
     ) -> MCPHTTPResponse:
         """
         Dispatch an HTTP request to the MiniMCP server.
+
+        Args:
+            method: The HTTP method of the request.
+            headers: HTTP request headers.
+            body: HTTP request body.
+            scope: Optional message scope passed to the MiniMCP server.
+
+        Returns:
+            MCPHTTPResponse object with the response from the MiniMCP server.
         """
 
         logger.debug("Handling HTTP request. Method: %s, Headers: %s", method, headers)
@@ -99,6 +108,7 @@ class HTTPTransport(Generic[ScopeT]):
         Provide the HTTP transport as a Starlette application.
 
         Args:
+            path: The path to the MCP application endpoint.
             debug: Whether to enable debug mode.
 
         Returns:

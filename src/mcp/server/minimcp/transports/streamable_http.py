@@ -259,6 +259,7 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         Provide the HTTP transport as a Starlette application.
 
         Args:
+            path: The path to the MCP application endpoint.
             debug: Whether to enable debug mode.
 
         Returns:

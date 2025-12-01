@@ -20,6 +20,15 @@ JSON_RPC_VERSION = "2.0"
 
 
 def to_dict(model: BaseModel) -> dict[str, Any]:
+    """
+    Convert a JSON-RPC Pydantic model to a dictionary.
+
+    Args:
+        model: The Pydantic model to convert.
+
+    Returns:
+        A dictionary representation of the model.
+    """
     return model.model_dump(by_alias=True, exclude_none=True)
 
 
@@ -39,7 +48,7 @@ def build_response_message(request_id: str | int, response: ServerResult) -> Mes
         response: The response object to build the response message from.
 
     Returns:
-        A JSON-RPC response message object.
+        A JSON-RPC response message string.
     """
     json_rpc_response = JSONRPCResponse(jsonrpc=JSON_RPC_VERSION, id=request_id, result=to_dict(response))
     return _to_message(JSONRPCMessage(json_rpc_response))
@@ -53,7 +62,7 @@ def build_notification_message(notification: ServerNotification) -> Message:
         notification: The notification object to build the notification message from.
 
     Returns:
-        A JSON-RPC notification message object.
+        A JSON-RPC notification message string.
     """
     json_rpc_notification = JSONRPCNotification(jsonrpc=JSON_RPC_VERSION, **to_dict(notification))
     return _to_message(JSONRPCMessage(json_rpc_notification))
