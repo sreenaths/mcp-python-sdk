@@ -9,17 +9,13 @@ from pydantic import Field
 
 from mcp.server.minimcp import MiniMCP
 
-
 MATH_CONSTANTS = {
     "pi": 3.14159265359,
     "𝜋": 3.14159265359,
-
     "e": 2.71828182846,
     "𝚎": 2.71828182846,
-
     "golden_ratio": 1.61803398875,
     "𝚽": 1.61803398875,
-
     "sqrt_2": 1.41421356237,
     "√2": 1.41421356237,
 }
@@ -43,8 +39,7 @@ def add(a: float = Field(description="The first number"), b: float = Field(descr
 
 @math_mcp.tool()
 def add_with_const(
-    a: float | str = Field(description="The first value"),
-    b: float | str = Field(description="The second value")
+    a: float | str = Field(description="The first value"), b: float | str = Field(description="The second value")
 ) -> float:
     """Add two values. Values can be numbers or mathematical constants."""
     if isinstance(a, str):
@@ -109,6 +104,7 @@ Include:
 
 
 # -- Resources --
+
 
 @math_mcp.resource("math://constants")
 def get_math_constants() -> dict[str, float]:

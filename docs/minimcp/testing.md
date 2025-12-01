@@ -694,14 +694,6 @@ class TestMyFeature:
             await my_fixture.do_invalid_thing()
 ```
 
-## Continuous Integration
-
-The test suite is automatically run on:
-- ✅ Every pull request
-- ✅ Every commit to main branch
-- ✅ Multiple Python versions (3.10+)
-- ✅ Multiple platforms (Linux, macOS, Windows)
-
 ## Test Dependencies
 
 The test suite uses:
