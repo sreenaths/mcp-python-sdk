@@ -215,6 +215,15 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
     ) -> MCPHTTPResponse:
         """
         Dispatch an HTTP request to the MiniMCP server.
+
+        Args:
+            method: The HTTP method of the request.
+            headers: HTTP request headers.
+            body: HTTP request body.
+            scope: Optional message scope passed to the MiniMCP server.
+
+        Returns:
+            MCPHTTPResponse object with the response from the MiniMCP server.
         """
 
         if self._tg is None:
