@@ -38,6 +38,71 @@ logger = logging.getLogger(__name__)
 
 
 class MiniMCP(Generic[ScopeT]):
+    """
+    MiniMCP is the key orchestrator for building Model Context Protocol (MCP) servers.
+
+    MiniMCP provides a high-level, stateless API for implementing MCP servers that expose tools,
+    prompts, and resources to language models. It handles the complete message lifecycle from
+    parsing and validation through handler execution and error formatting, while managing
+    concurrency limits and idle timeouts.
+
+    Architecture:
+        MiniMCP integrates several specialized managers to provide its functionality:
+        - tool: ToolManager for registering and executing tool handlers
+        - prompt: PromptManager for exposing prompt templates to clients
+        - resource: ResourceManager for providing contextual data to language models
+        - context: ContextManager for accessing request metadata within handlers
+
+    Key Features:
+        - Message Processing: Parses JSON-RPC messages, validates against MCP protocol specification,
+          and dispatches to appropriate handlers based on request type
+        - Concurrency Control: Enforces configurable limits on concurrent message handlers and
+          idle timeouts to prevent resource exhaustion
+        - Context Management: Maintains thread-safe, async-safe context isolation using contextvars,
+          providing handlers with access to message metadata, scope objects, and responder for
+          bidirectional communication
+        - Error Handling: Centralizes error processing with automatic conversion to JSON-RPC error
+          responses, mapping MiniMCP exceptions to appropriate MCP error codes
+        - Protocol Compliance: Implements MCP handshake (initialize request/response) with protocol
+          version negotiation and capability advertisement
+
+    Generic Parameter:
+        ScopeT: Optional type for custom scope objects passed to handlers. Use this to provide
+            authentication details, user info, session data, database handles, or any other
+            per-request context to your handlers. Set to None if not needed.
+
+    Example:
+        ```python
+        from mcp.server.minimcp import MiniMCP
+
+        # Create server instance
+        mcp = MiniMCP("my-server", version="1.0.0")
+
+        # Register a tool
+        @mcp.tool()
+        def calculate(expression: str) -> float:
+            '''Evaluate a mathematical expression'''
+            return eval(expression)
+
+        # Register a prompt
+        @mcp.prompt()
+        def code_review(code: str) -> str:
+            '''Request a code review'''
+            return f"Please review this code:\n{code}"
+
+        # Register a resource
+        @mcp.resource("config://app.json")
+        def get_config() -> dict:
+            return {"version": "1.0", "environment": "production"}
+
+        # Handle incoming messages
+        response = await mcp.handle(message, send=send_callback, scope=user_context)
+        ```
+
+    For transport integration, use with HTTPTransport, StreamableHTTPTransport, or StdioTransport.
+    See https://modelcontextprotocol.io/specification/2025-06-18 for protocol details.
+    """
+
     _core: Server
     _notification_options: NotificationOptions | None = None
     _limiter: Limiter
@@ -65,9 +130,11 @@ class MiniMCP(Generic[ScopeT]):
             version: The version of the MCP server.
             instructions: The instructions for the MCP server.
 
-            idle_timeout: Time in seconds after which a message handler will be considered idle and timed out.
-            max_concurrency: The maximum number of message handlers that could be run at
-                the same time, beyond which the handle() calls will be blocked.
+            idle_timeout: Time in seconds after which a message handler will be considered idle and
+                timed out. Default is 30 seconds.
+            max_concurrency: The maximum number of message handlers that could be run at the same time,
+                beyond which the handle() calls will be blocked. Default is 100.
+            include_stack_trace: Whether to include the stack trace in the error response. Default is False.
         """
         self._limiter = Limiter(idle_timeout, max_concurrency)
         self._include_stack_trace = include_stack_trace
@@ -94,20 +161,44 @@ class MiniMCP(Generic[ScopeT]):
     # --- Properties ---
     @property
     def name(self) -> str:
+        """The name of the MCP server."""
         return self._core.name
 
     @property
     def instructions(self) -> str | None:
+        """The instructions for the MCP server."""
         return self._core.instructions
 
     @property
     def version(self) -> str | None:
+        """The version of the MCP server."""
         return self._core.version
 
     # --- Handlers ---
     async def handle(
         self, message: Message, send: Send | None = None, scope: ScopeT | None = None
     ) -> Message | NoMessage:
+        """
+        Handle an incoming MCP message from the client. It is the entry point for all MCP messages and runs
+        on the current event loop task.
+
+        It is responsible for parsing the message, validating the message, enforcing limiters, activating the
+        context, and dispatching the message to the appropriate handler. It also provides a centralized error
+        handling mechanism for all MCP errors.
+
+        Args:
+            message: The incoming MCP message from the client.
+            send: The send function for transmitting messages to the client. Optional.
+            scope: The scope object for the client. Optional.
+
+        Returns:
+            The response MCP message to the client. If the message is a notification, NoMessage.NOTIFICATION
+            is returned.
+
+        Raises:
+            InvalidMessageError: If the message is not a valid JSON-RPC message.
+            cancelled_exception_class: If the task is cancelled.
+        """
         try:
             rpc_msg = self._parse_message(message)
 
@@ -152,6 +243,20 @@ class MiniMCP(Generic[ScopeT]):
             raise  # Cancel must be re-raised
 
     def _parse_message(self, message: Message) -> types.JSONRPCMessage:
+        """
+        Parse the incoming MCP message from the client into a JSON-RPC message.
+
+        Args:
+            message: The incoming MCP message from the client.
+
+        Returns:
+            The parsed JSON-RPC message.
+
+        Raises:
+            InvalidJSONError: If the message is not a valid JSON string.
+            InvalidJSONRPCMessageError: If the message is not a valid JSON-RPC object.
+            InvalidMCPMessageError: If the message is not a valid MCP message.
+        """
         try:
             return types.JSONRPCMessage.model_validate_json(message)
         except ValidationError as e:
@@ -175,6 +280,16 @@ class MiniMCP(Generic[ScopeT]):
             raise InvalidMCPMessageError(str(e)) from e
 
     async def _handle_rpc_msg(self, rpc_msg: types.JSONRPCMessage) -> Message | NoMessage:
+        """
+        Handle a JSON-RPC MCP message. The message must be a request or notification.
+
+        Args:
+            rpc_msg: The JSON-RPC MCP message to handle.
+
+        Returns:
+            The response MCP message to the client. If the message is a notification,
+            NoMessage.NOTIFICATION is returned.
+        """
         msg_root = rpc_msg.root
 
         # --- Handle request ---
@@ -228,6 +343,16 @@ class MiniMCP(Generic[ScopeT]):
         return NoMessage.NOTIFICATION
 
     async def _initialize_handler(self, req: types.InitializeRequest) -> types.ServerResult:
+        """
+        Custom handler for the MCP InitializeRequest.
+        It is directly hooked on initializing MiniMCP, and is an integral part of MCP client-server handshake.
+
+        Args:
+            req: The InitializeRequest to handle.
+
+        Returns:
+            The InitializeResult.
+        """
         client_protocol_version = req.params.protocolVersion
         server_protocol_version = (
             client_protocol_version
