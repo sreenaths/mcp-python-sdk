@@ -81,6 +81,7 @@ class StreamManager:
 
         Args:
             message: Message to send.
+            create_timeout: Timeout to create the streams.
         """
         if self._send_stream is None:
             with anyio.fail_after(create_timeout):
@@ -283,6 +284,12 @@ class StreamableHTTPTransport(HTTPTransport[ScopeT]):
         else it acts like a regular HTTP transport. For streaming, _handle_post_request_task sends a MCPHTTPResponse
         with a MemoryObjectReceiveStream as the content and continues running in the background until
         the handler finishes executing.
+
+        Args:
+            headers: HTTP request headers.
+            body: HTTP request body.
+            scope: Optional message scope passed to the MiniMCP server.
+            task_status: Task status object to communicate task readiness and result.
         """
 
         stream_manager = StreamManager(on_create=task_status.started)

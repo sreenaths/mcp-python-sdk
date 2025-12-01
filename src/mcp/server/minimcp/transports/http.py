@@ -22,15 +22,16 @@ logger = logging.getLogger(__name__)
 class _RequestValidationError(Exception):
     """
     Exception raised when an error occurs in the HTTP transport.
-
-    Attributes:
-        message: The error message.
-        status_code: The HTTP status code to return to the client.
     """
 
     status_code: HTTPStatus
 
     def __init__(self, message: str, status_code: HTTPStatus):
+        """
+        Args:
+            message: The error message to return to the client.
+            status_code: The HTTP status code to return to the client.
+        """
         super().__init__(message)
         self.status_code = status_code
 
@@ -119,6 +120,8 @@ class HTTPTransport(Generic[ScopeT]):
         Args:
             headers: HTTP request headers.
             body: HTTP request body.
+            scope: Optional message scope passed to the MiniMCP server.
+            send_callback: Optional send function for transmitting messages to the client.
 
         Returns:
             MCPHTTPResponse with the response from the MiniMCP server.

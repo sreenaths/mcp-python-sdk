@@ -70,9 +70,11 @@ def build_error_message(
     Build a JSON-RPC error message with the given error code, message ID, and error.
 
     Args:
-        error_code: The JSON-RPC error code to use. See mcp.types for available codes.
-        request_message: The request message that resulted in the error.
         error: The error object to build the error message from.
+        request_message: The request message that resulted in the error.
+        error_code: The JSON-RPC error code to use. See mcp.types for available codes.
+        data: Additional data to include in the error message.
+        include_stack_trace: Whether to include the stack trace in the error message.
 
     Returns:
         A tuple containing the error formatted as a JSON-RPC message and a human-readable string.

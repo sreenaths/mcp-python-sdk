@@ -491,8 +491,7 @@ class ResourceManager:
             uri: The URI to match.
 
         Returns:
-            A tuple of (resource_details, extracted_args). If no match is found,
-            returns (None, None). For static resources, args will be None.
+            A tuple of (resource_details, extracted_args). For static resources, args will be None.
 
         Raises:
             ResourceNotFoundError: If no matching resource is found.
