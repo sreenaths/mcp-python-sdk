@@ -20,6 +20,9 @@ class Issue(BaseModel):
     created_at: int
 
 
+# MiniMCP provides a powerful scope object mechanism. Its generic and can be typed by the user. It can be used
+# to pass any type of extra information to the handler functions. In this example, we use it to pass the current
+# user name to the handler functions.
 class Scope(BaseModel):
     user_name: str
 
