@@ -5,6 +5,9 @@ from pydantic import BaseModel
 
 from mcp.server.minimcp import HTTPTransport, MiniMCP
 
+# Server can be started using teh following command
+# uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app
+
 
 # --- Schema ---
 class User(BaseModel):
@@ -29,6 +32,7 @@ mcp = MiniMCP[Scope](
     name="UserMCPServer", version="0.1.0", instructions="A simple MCP server for accessing user information."
 )
 
+
 @mcp.tool()
 def get_current_user_age() -> int:
     "get the age of the current logged in user"
@@ -36,10 +40,12 @@ def get_current_user_age() -> int:
     user_yob = mcp.context.get_scope().user.yob
     return current_year - user_yob
 
+
 transport = HTTPTransport[Scope](mcp)
 
 # --- FastAPI App ---
 app = FastAPI()
+
 
 @app.post("/mcp")
 async def read_root(request: Request, user: User = Depends(get_current_user)):
