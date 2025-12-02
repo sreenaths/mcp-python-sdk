@@ -1,12 +1,22 @@
+#!/usr/bin/env python3
+# pyright: basic
+# pyright: reportMissingImports=false
+
+"""
+FastAPI HTTP Server Example with Scope
+This example demonstrates how to create a minimal FastAPI HTTP server for MCP.
+
+How to run:
+    Start the development server (default: http://127.0.0.1:8000)
+    uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app
+"""
+
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, Request
 from pydantic import BaseModel
 
 from mcp.server.minimcp import HTTPTransport, MiniMCP
-
-# Server can be started using teh following command
-# uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app
 
 
 # --- Schema ---
