@@ -3,61 +3,69 @@
 # pyright: reportMissingImports=false
 
 """
-FastAPI HTTP Server Example with Scope
-This example demonstrates how to create a minimal FastAPI HTTP server for MCP.
+FastAPI HTTP MCP Server with Scope
+This example demonstrates how to create a minimal MCP server with FastAPI using HTTP transport. It shows
+how to use scope to pass extra information that can be accessed inside the handler functions. It also shows
+how to use FastAPI's dependency injection along with MiniMCP. It uses FastAPI's HTTPBasic authentication
+middleware to extract the user information from the request.
 
 How to run:
-    Start the development server (default: http://127.0.0.1:8000)
+    # Start the server (default: http://127.0.0.1:8000)
     uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app
+
+Testing with basic auth (admin/admin):
+
+    # 1. Ping the MCP server
+    curl -X POST http://127.0.0.1:8000/mcp \
+        -u admin:admin \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        -d '{"jsonrpc": "2.0", "id": "1", "method": "ping"}'
+
+    # 2. List tools
+    curl -X POST http://127.0.0.1:8000/mcp \
+        -u admin:admin \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'
+
+    # 2. Create an issue
+    curl -X POST http://127.0.0.1:8000/mcp \
+        -u admin:admin \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
+            "params":{"name":"create_issue","arguments":{"title":"First issue","description":"Issue description"}}}'
+
+    # 3. Read the issue
+    curl -X POST http://127.0.0.1:8000/mcp \
+        -u admin:admin \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
+            "params":{"name":"read_issue","arguments":{"issue_id":"MCP-1"}}}'
+
+    # 4. Delete the issue
+    curl -X POST http://127.0.0.1:8000/mcp \
+        -u admin:admin \
+        -H "Content-Type: application/json" \
+        -H "Accept: application/json" \
+        -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
+            "params":{"name":"delete_issue","arguments":{"issue_id":"MCP-1"}}}'
+
 """
 
-from datetime import datetime
-
 from fastapi import Depends, FastAPI, Request
-from pydantic import BaseModel
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from mcp.server.minimcp import HTTPTransport, MiniMCP
+from examples.minimcp.web_frameworks.issue_tracker_mcp import Scope, mcp_transport
 
-
-# --- Schema ---
-class User(BaseModel):
-    id: int
-    name: str
-    yob: int
-
-
-class Scope(BaseModel):
-    user: User
-
-
-# --- Dependencies ---
-def get_current_user() -> User:
-    # Your code to get the current user from the authentication service or database goes here
-    return User(id=1, name="Neo", yob=1987)
-
-
-# --- MCP ---
-
-mcp = MiniMCP[Scope](
-    name="UserMCPServer", version="0.1.0", instructions="A simple MCP server for accessing user information."
-)
-
-
-@mcp.tool()
-def get_current_user_age() -> int:
-    "get the age of the current logged in user"
-    current_year = datetime.now().year
-    user_yob = mcp.context.get_scope().user.yob
-    return current_year - user_yob
-
-
-transport = HTTPTransport[Scope](mcp)
-
-# --- FastAPI App ---
+# --- FastAPI Application ---
 app = FastAPI()
+security = HTTPBasic()
 
 
 @app.post("/mcp")
-async def read_root(request: Request, user: User = Depends(get_current_user)):
-    scope = Scope(user=user)
-    return await transport.starlette_dispatch(request, scope)
+async def mcp(request: Request, credentials: HTTPBasicCredentials = Depends(security)):
+    scope = Scope(user_name=credentials.username)
+    return await mcp_transport.starlette_dispatch(request, scope)
