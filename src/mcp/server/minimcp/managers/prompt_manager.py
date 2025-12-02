@@ -95,7 +95,7 @@ class PromptManager:
         core.get_prompt()(self.get)
         # core.complete()(self._async_complete) # TODO: Implement completion for prompts
 
-    def __call__(self, **kwargs: Unpack[PromptDefinition]) -> Callable[[Callable[[Any], Any]], Prompt]:
+    def __call__(self, **kwargs: Unpack[PromptDefinition]) -> Callable[[AnyFunction], Prompt]:
         """Decorator to add/register a prompt handler at the time of handler function definition.
 
         Prompt name and description are automatically inferred from the handler function. You can override

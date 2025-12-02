@@ -581,6 +581,30 @@ class TestToolManager:
         assert tool.name == "decorated_tool"
         assert tool.description == "A decorated tool"
 
+    async def test_decorator_with_no_arguments(self, tool_manager: ToolManager):
+        """Test using ToolManager decorator with a handler that accepts no arguments."""
+
+        @tool_manager(name="no_args_tool", description="A tool with no arguments")
+        def no_args_function() -> int:
+            """A tool function that takes no arguments."""
+            return 42
+
+        # Verify the tool was added
+        assert "no_args_tool" in tool_manager._tools
+        tool, _ = tool_manager._tools["no_args_tool"]
+        assert tool.name == "no_args_tool"
+        assert tool.description == "A tool with no arguments"
+
+        # Verify the tool can be called without arguments
+        result = await tool_manager.call("no_args_tool", {})
+        # Result is a tuple of (content_list, structured_output)
+        assert len(result) == 2
+        content_list = result[0]
+        assert isinstance(content_list, list)
+        assert len(content_list) == 1
+        assert isinstance(content_list[0], types.TextContent)
+        assert content_list[0].text == "42"
+
     def test_tool_options_typed_dict(self):
         """Test ToolDefinition TypedDict structure."""
         # This tests the type structure - mainly for documentation

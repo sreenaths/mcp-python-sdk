@@ -678,6 +678,36 @@ class TestResourceManager:
         assert resource_details.resource.title == "Decorated Resource"
         assert resource_details.resource.description == "A decorated resource function."
 
+    async def test_decorator_with_no_arguments(self, resource_manager: ResourceManager):
+        """Test using ResourceManager decorator with a handler that accepts no arguments."""
+
+        @resource_manager("file://no_args.txt", title="No Args Resource")
+        def no_args_function() -> str:
+            """A resource function that takes no arguments."""
+            return "Static content with no parameters"
+
+        # Verify the resource was added
+        assert "no_args_function" in resource_manager._resources
+        resource_details = resource_manager._resources["no_args_function"]
+        assert resource_details.resource.name == "no_args_function"
+        assert resource_details.resource.title == "No Args Resource"
+        assert resource_details.resource.description == "A resource function that takes no arguments."
+        assert isinstance(resource_details.resource, types.Resource)
+        assert str(resource_details.resource.uri).rstrip("/") == "file://no_args.txt"
+
+        # Verify the resource is not a template (has no parameters)
+        assert resource_details.uri_pattern is None
+
+        # Verify the resource can be read without arguments
+        result = await resource_manager.read("file://no_args.txt")
+        result_list = list(result)
+        assert len(result_list) == 1
+        assert isinstance(result_list[0], ReadResourceContents)
+        content_str = (
+            result_list[0].content if isinstance(result_list[0].content, str) else result_list[0].content.decode()
+        )
+        assert content_str == "Static content with no parameters"
+
     def test_uri_to_pattern_function(self):
         """Test the _uri_to_pattern utility function."""
 

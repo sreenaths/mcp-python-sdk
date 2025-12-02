@@ -105,7 +105,7 @@ class ToolManager:
         # TODO: Ensure only one validation is required
         core.call_tool(validate_input=False)(self._call)
 
-    def __call__(self, **kwargs: Unpack[ToolDefinition]) -> Callable[[Callable[[Any], Any]], types.Tool]:
+    def __call__(self, **kwargs: Unpack[ToolDefinition]) -> Callable[[types.AnyFunction], types.Tool]:
         """Decorator to add/register a tool handler at the time of handler function definition.
 
         Tool name and description are automatically inferred from the handler function. You can override

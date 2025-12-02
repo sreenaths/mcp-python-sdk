@@ -599,6 +599,31 @@ class TestPromptManager:
         assert prompt.title == "Decorated"
         assert prompt.description == "A decorated prompt function."
 
+    async def test_decorator_with_no_arguments(self, prompt_manager: PromptManager):
+        """Test using PromptManager decorator with a handler that accepts no arguments."""
+
+        @prompt_manager(name="no_args_prompt", title="No Args Prompt")
+        def no_args_function() -> str:
+            """A prompt function that takes no arguments."""
+            return "This is a static prompt with no parameters"
+
+        # Verify the prompt was added
+        assert "no_args_prompt" in prompt_manager._prompts
+        prompt, _ = prompt_manager._prompts["no_args_prompt"]
+        assert prompt.name == "no_args_prompt"
+        assert prompt.title == "No Args Prompt"
+        assert prompt.description == "A prompt function that takes no arguments."
+
+        # Verify the prompt has no arguments
+        assert prompt.arguments == []
+
+        # Verify the prompt can be called without arguments
+        result = await prompt_manager.get("no_args_prompt", {})
+        assert len(result.messages) == 1
+        assert result.messages[0].role == "user"
+        assert isinstance(result.messages[0].content, types.TextContent)
+        assert result.messages[0].content.text == "This is a static prompt with no parameters"
+
     async def test_full_workflow(self, prompt_manager: PromptManager):
         """Test a complete workflow: add, list, get, remove."""
 
