@@ -19,7 +19,7 @@ from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 logger = logging.getLogger(__name__)
 
 
-class _RequestValidationError(Exception):
+class RequestValidationError(Exception):
     """
     Exception raised when an error occurs in the HTTP transport.
     """
@@ -152,7 +152,7 @@ class HTTPTransport(Generic[ScopeT]):
             else:
                 return MCPHTTPResponse(HTTPStatus.OK, response, MEDIA_TYPE_JSON)
 
-        except _RequestValidationError as e:
+        except RequestValidationError as e:
             content, error_message = json_rpc.build_error_message(
                 e,
                 body,
@@ -203,14 +203,14 @@ class HTTPTransport(Generic[ScopeT]):
             headers: HTTP request headers containing the Accept header.
 
         Raises:
-            _RequestValidationError: If the client doesn't accept all supported types.
+            RequestValidationError: If the client doesn't accept all supported types.
         """
         accept_header = headers.get("Accept", "")
         accepted_types = [t.split(";")[0].strip().lower() for t in accept_header.split(",")]
 
         if not self.RESPONSE_MEDIA_TYPES.issubset(accepted_types):
             response_content_types_str = " and ".join(self.RESPONSE_MEDIA_TYPES)
-            raise _RequestValidationError(
+            raise RequestValidationError(
                 f"Not Acceptable: Client must accept {response_content_types_str}",
                 HTTPStatus.NOT_ACCEPTABLE,
             )
@@ -226,13 +226,13 @@ class HTTPTransport(Generic[ScopeT]):
             headers: HTTP request headers containing the Content-Type header.
 
         Raises:
-            _RequestValidationError: If the type is not application/json.
+            RequestValidationError: If the type is not application/json.
         """
         content_type = headers.get("Content-Type", "")
         content_type = content_type.split(";")[0].strip().lower()
 
         if content_type != MEDIA_TYPE_JSON:
-            raise _RequestValidationError(
+            raise RequestValidationError(
                 "Unsupported Media Type: Content-Type must be " + MEDIA_TYPE_JSON,
                 HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
             )
@@ -251,7 +251,7 @@ class HTTPTransport(Generic[ScopeT]):
             body: The request body, checked to determine if this is an initialize request.
 
         Raises:
-            _RequestValidationError: If the protocol version is unsupported.
+            RequestValidationError: If the protocol version is unsupported.
 
         See Also:
             https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#protocol-version-header
@@ -268,7 +268,7 @@ class HTTPTransport(Generic[ScopeT]):
         # Check if the protocol version is supported
         if protocol_version not in SUPPORTED_PROTOCOL_VERSIONS:
             supported_versions = ", ".join(SUPPORTED_PROTOCOL_VERSIONS)
-            raise _RequestValidationError(
+            raise RequestValidationError(
                 (
                     f"Bad Request: Unsupported protocol version: {protocol_version}. "
                     f"Supported versions: {supported_versions}"

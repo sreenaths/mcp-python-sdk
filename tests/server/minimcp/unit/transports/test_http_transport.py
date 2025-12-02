@@ -7,7 +7,7 @@ import pytest
 
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.minimcp_types import NoMessage
-from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, _RequestValidationError
+from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, RequestValidationError
 from mcp.shared.version import LATEST_PROTOCOL_VERSION
 
 pytestmark = pytest.mark.anyio
@@ -336,7 +336,7 @@ class TestHTTPTransportHeaderValidation:
         """Test _validate_accept_headers with invalid headers."""
         headers = {"Accept": "text/plain, text/html"}
 
-        with pytest.raises(_RequestValidationError) as exc_info:
+        with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_accept_headers(headers)
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
@@ -345,7 +345,7 @@ class TestHTTPTransportHeaderValidation:
         """Test validate accept headers with missing Accept header."""
         headers: dict[str, str] = {}
 
-        with pytest.raises(_RequestValidationError) as exc_info:
+        with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_accept_headers(headers)
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
@@ -372,7 +372,7 @@ class TestHTTPTransportHeaderValidation:
         """Test validate content type with invalid content type."""
         headers = {"Content-Type": "text/plain"}
 
-        with pytest.raises(_RequestValidationError) as exc_info:
+        with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_content_type(headers)
 
         assert exc_info.value.status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
@@ -381,7 +381,7 @@ class TestHTTPTransportHeaderValidation:
         """Test validate content type with missing Content-Type header."""
         headers: dict[str, str] = {}
 
-        with pytest.raises(_RequestValidationError) as exc_info:
+        with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_content_type(headers)
 
         assert exc_info.value.status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
@@ -410,7 +410,7 @@ class TestHTTPTransportHeaderValidation:
         headers = {"MCP-Protocol-Version": "invalid-version"}
         body = '{"jsonrpc": "2.0", "method": "test", "id": 1}'
 
-        with pytest.raises(_RequestValidationError) as exc_info:
+        with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_protocol_version(headers, body)
 
         assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
@@ -456,7 +456,7 @@ class TestHTTPTransportHeaderValidation:
         headers = {"Accept": "application/json"}
         transport.RESPONSE_MEDIA_TYPES = frozenset[str]({"application/json", "text/event-stream"})
 
-        with pytest.raises(_RequestValidationError) as exc_info:
+        with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_accept_headers(headers)
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
@@ -465,7 +465,7 @@ class TestHTTPTransportHeaderValidation:
         """Test _validate_accept_headers with empty Accept header."""
         headers = {"Accept": ""}
 
-        with pytest.raises(_RequestValidationError) as exc_info:
+        with pytest.raises(RequestValidationError) as exc_info:
             transport._validate_accept_headers(headers)
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
