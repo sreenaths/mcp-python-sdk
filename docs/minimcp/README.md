@@ -290,7 +290,8 @@ For detailed information about the test suite, coverage, and running tests, see 
 
 ## Examples
 
-The [examples](../examples/minimcp/) include a [Math MCP server](../examples/minimcp/math_mcp_server//math_mcp.py) with prompts, resources and four tools (add, subtract, multiply, and divide) demonstrating how MiniMCP works with different transport mechanisms and frameworks.
+### Math MCP server
+The [examples](../examples/minimcp/) include a [Math MCP server](../examples/minimcp/math_mcp/math_mcp.py) with prompts, resources and four tools (add, subtract, multiply, and divide) demonstrating how MiniMCP works with different transport mechanisms and frameworks.
 
 To run the examples, you’ll need a development setup. After cloning this repository, run the following command from the project root to set up the environment:
 
@@ -300,11 +301,21 @@ uv sync --frozen --all-extras --dev
 
 The table below lists the available examples along with the commands to run them.
 
-| # | Transport                    | Command                                                                        |
-|---|------------------------------|--------------------------------------------------------------------------------|
-| 1 | Stdio                        | `uv run -m examples.minimcp.math_mcp.stdio_server`                                     |
-| 2 | HTTP with FastAPI            | `uv run uvicorn examples.minimcp.math_mcp.http_server:app --reload`            |
-| 3 | Streamable HTTP with FastAPI | `uv run uvicorn examples.minimcp.math_mcp.streamable_http_server:app --reload` |
+| # | Transport/Server       | Command                                                               |
+|---|------------------------|-----------------------------------------------------------------------|
+| 1 | Stdio                  | `uv run -m examples.minimcp.math_mcp.stdio_server`                    |
+| 2 | HTTP Server            | `uv run uvicorn examples.minimcp.math_mcp.http_server:app`            |
+| 3 | Streamable HTTP Server | `uv run uvicorn examples.minimcp.math_mcp.streamable_http_server:app` |
+
+### With Web Frameworks
+Next set of examples demonstrate how MiniMCP can be integrated with web frameworks like FastAPI and Django.
+
+The table below lists the available examples along with the commands to run them.
+
+| # | Server                         | Command                                                                                            |
+|---|--------------------------------|----------------------------------------------------------------------------------------------------|
+| 1 | FastAPI HTTP Server with scope | `uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app` |
+
 
 ### Claude Desktop
 
