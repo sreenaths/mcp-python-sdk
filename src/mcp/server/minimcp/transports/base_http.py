@@ -2,8 +2,9 @@ import json
 import logging
 from collections.abc import Mapping
 from http import HTTPStatus
-from typing import Generic
+from typing import Generic, NamedTuple
 
+from anyio.streams.memory import MemoryObjectReceiveStream
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import Response
@@ -14,10 +15,28 @@ from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, NoMessage, Send
+from mcp.server.minimcp.minimcp_types import Message, NoMessage, Send
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 logger = logging.getLogger(__name__)
+
+
+class MCPHTTPResponse(NamedTuple):
+    """
+    Represents the response from a MiniMCP server to a client HTTP request.
+
+    Attributes:
+        status_code: The HTTP status code to return to the client.
+        content: The response content, which can be a Message, NoMessage,
+                a stream of Messages, or None.
+        media_type: The MIME type of the response content (e.g., "application/json").
+        headers: Additional HTTP headers to include in the response.
+    """
+
+    status_code: HTTPStatus
+    content: Message | NoMessage | MemoryObjectReceiveStream[Message] | None = None
+    media_type: str | None = None
+    headers: Mapping[str, str] | None = None
 
 
 class RequestValidationError(Exception):

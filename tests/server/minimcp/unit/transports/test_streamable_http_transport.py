@@ -11,7 +11,8 @@ from test_base_http_transport import TestBaseHTTPTransport
 
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.exceptions import MCPRuntimeError
-from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, Message, NoMessage, Send
+from mcp.server.minimcp.minimcp_types import Message, NoMessage, Send
+from mcp.server.minimcp.transports.base_http import MCPHTTPResponse
 from mcp.server.minimcp.transports.streamable_http import (
     SSE_HEADERS,
     StreamableHTTPTransport,

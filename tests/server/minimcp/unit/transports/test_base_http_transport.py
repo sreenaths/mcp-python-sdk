@@ -45,7 +45,11 @@ class TestBaseHTTPTransport:
         return BaseHTTPTransport[Any](mcp)
 
     async def test_dispatch_post_request_success(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test successful POST request handling."""
         result = await transport.dispatch("POST", request_headers, valid_body)
@@ -56,7 +60,11 @@ class TestBaseHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_unsupported_method(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling of unsupported HTTP methods."""
         result = await transport.dispatch("GET", request_headers, valid_body)
@@ -100,7 +108,11 @@ class TestBaseHTTPTransport:
         mock_handler.assert_not_called()
 
     async def test_dispatch_no_message_response(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling when handler returns NoMessage."""
         mock_handler.return_value = NoMessage.NOTIFICATION
@@ -112,7 +124,11 @@ class TestBaseHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_error_response(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling of JSON-RPC error responses."""
         error_response = json.dumps(
@@ -128,7 +144,11 @@ class TestBaseHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_internal_error_response(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling of internal error responses."""
         error_response = json.dumps({"jsonrpc": "2.0", "error": {"code": -32603, "message": "Internal error"}, "id": 1})
@@ -141,7 +161,11 @@ class TestBaseHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_method_not_found_error(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling of method not found errors."""
         error_response = json.dumps(
@@ -156,7 +180,11 @@ class TestBaseHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_unknown_error_code(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling of unknown error codes."""
         error_response = json.dumps({"jsonrpc": "2.0", "error": {"code": -99999, "message": "Unknown error"}, "id": 1})
@@ -169,7 +197,11 @@ class TestBaseHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_malformed_response(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling of malformed JSON responses."""
         mock_handler.return_value = "not valid json"
@@ -289,7 +321,11 @@ class TestBaseHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_handle_post_request_direct(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test the _handle_post_request method directly."""
         result = await transport._handle_post_request(request_headers, valid_body, None)
@@ -300,7 +336,11 @@ class TestBaseHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_response_without_id(
-        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self,
+        transport: BaseHTTPTransport[Any],
+        mock_handler: AsyncMock,
+        request_headers: dict[str, str],
+        valid_body: str,
     ):
         """Test handling of responses without ID (notifications)."""
         notification_response = json.dumps(
