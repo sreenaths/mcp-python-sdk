@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import anyio
 import pytest
 from anyio.streams.memory import MemoryObjectReceiveStream
-from test_http_transport import TestHTTPTransport
+from test_base_http_transport import TestBaseHTTPTransport
 
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.exceptions import MCPRuntimeError
@@ -802,7 +802,7 @@ class TestStreamableHTTPTransportEdgeCases:
         assert handler.call_count == 5
 
 
-class TestStreamableHTTPTransportBase(TestHTTPTransport):
+class TestStreamableHTTPTransportBase(TestBaseHTTPTransport):
     """
     Test suite that validates StreamableHTTPTransport inherits all base HTTPTransport functionality.
 

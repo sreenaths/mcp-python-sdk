@@ -19,7 +19,7 @@ from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.exceptions import MCPRuntimeError, MiniMCPError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp_types import MCPHTTPResponse, Message
-from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport
+from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, BaseHTTPTransport
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ class StreamManager:
 
 
 # TODO: Add resumability based on Last-Event-ID header on GET method.
-class StreamableHTTPTransport(HTTPTransport[ScopeT]):
+class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
     """
     Adds support for MCP's streamable HTTP transport mechanism.
     More details @ https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http

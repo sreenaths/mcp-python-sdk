@@ -7,13 +7,13 @@ import pytest
 
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.minimcp_types import NoMessage
-from mcp.server.minimcp.transports.http import MEDIA_TYPE_JSON, HTTPTransport, RequestValidationError
+from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, BaseHTTPTransport, RequestValidationError
 from mcp.shared.version import LATEST_PROTOCOL_VERSION
 
 pytestmark = pytest.mark.anyio
 
 
-class TestHTTPTransport:
+class TestBaseHTTPTransport:
     """Test suite for HTTP transport."""
 
     @pytest.fixture
@@ -39,13 +39,13 @@ class TestHTTPTransport:
         return AsyncMock(return_value='{"jsonrpc": "2.0", "result": "success", "id": 1}')
 
     @pytest.fixture
-    def transport(self, mock_handler: AsyncMock) -> HTTPTransport[Any]:
+    def transport(self, mock_handler: AsyncMock) -> BaseHTTPTransport[Any]:
         mcp = AsyncMock(spec=MiniMCP[Any])
         mcp.handle = mock_handler
-        return HTTPTransport[Any](mcp)
+        return BaseHTTPTransport[Any](mcp)
 
     async def test_dispatch_post_request_success(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test successful POST request handling."""
         result = await transport.dispatch("POST", request_headers, valid_body)
@@ -56,7 +56,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_unsupported_method(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling of unsupported HTTP methods."""
         result = await transport.dispatch("GET", request_headers, valid_body)
@@ -68,7 +68,7 @@ class TestHTTPTransport:
         mock_handler.assert_not_called()
 
     async def test_dispatch_invalid_content_type(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
     ):
         """Test handling of invalid content type."""
         headers = {
@@ -84,7 +84,7 @@ class TestHTTPTransport:
         mock_handler.assert_not_called()
 
     async def test_dispatch_invalid_accept_header(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
     ):
         """Test handling of invalid Accept header."""
         headers = {
@@ -100,7 +100,7 @@ class TestHTTPTransport:
         mock_handler.assert_not_called()
 
     async def test_dispatch_no_message_response(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling when handler returns NoMessage."""
         mock_handler.return_value = NoMessage.NOTIFICATION
@@ -112,7 +112,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_error_response(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling of JSON-RPC error responses."""
         error_response = json.dumps(
@@ -128,7 +128,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_internal_error_response(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling of internal error responses."""
         error_response = json.dumps({"jsonrpc": "2.0", "error": {"code": -32603, "message": "Internal error"}, "id": 1})
@@ -141,7 +141,7 @@ class TestHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_method_not_found_error(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling of method not found errors."""
         error_response = json.dumps(
@@ -156,7 +156,7 @@ class TestHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_unknown_error_code(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling of unknown error codes."""
         error_response = json.dumps({"jsonrpc": "2.0", "error": {"code": -99999, "message": "Unknown error"}, "id": 1})
@@ -169,7 +169,7 @@ class TestHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_malformed_response(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling of malformed JSON responses."""
         mock_handler.return_value = "not valid json"
@@ -182,7 +182,7 @@ class TestHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
     async def test_dispatch_missing_headers(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
     ):
         """Test handling with minimal headers."""
         headers: dict[str, str] = {}
@@ -194,7 +194,7 @@ class TestHTTPTransport:
         mock_handler.assert_not_called()
 
     async def test_dispatch_protocol_version_validation(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
     ):
         """Test protocol version validation."""
         headers: dict[str, str] = {
@@ -210,7 +210,7 @@ class TestHTTPTransport:
         mock_handler.assert_not_called()
 
     async def test_dispatch_initialize_request_skips_version_check(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, accept_content_types: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, accept_content_types: str
     ):
         """Test that initialize requests skip protocol version validation."""
         headers: dict[str, str] = {
@@ -229,7 +229,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(initialize_body, ANY, None)
 
     async def test_dispatch_default_protocol_version(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
     ):
         """Test that default protocol version is used when header is missing."""
         headers: dict[str, str] = {
@@ -244,7 +244,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_content_type_with_charset(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
     ):
         """Test Content-Type header with charset parameter."""
         headers: dict[str, str] = {
@@ -259,7 +259,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_accept_header_with_quality(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str
     ):
         """Test Accept header with quality values."""
         headers: dict[str, str] = {
@@ -274,7 +274,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_dispatch_case_insensitive_headers(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, valid_body: str, accept_content_types: str
     ):
         """Test that header checking is case insensitive."""
         headers: dict[str, str] = {
@@ -289,7 +289,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_handle_post_request_direct(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test the _handle_post_request method directly."""
         result = await transport._handle_post_request(request_headers, valid_body, None)
@@ -300,7 +300,7 @@ class TestHTTPTransport:
         mock_handler.assert_called_once_with(valid_body, ANY, None)
 
     async def test_response_without_id(
-        self, transport: HTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
+        self, transport: BaseHTTPTransport[Any], mock_handler: AsyncMock, request_headers: dict[str, str], valid_body: str
     ):
         """Test handling of responses without ID (notifications)."""
         notification_response = json.dumps(
@@ -319,20 +319,20 @@ class TestHTTPTransport:
         assert result.media_type == MEDIA_TYPE_JSON
 
 
-class TestHTTPTransportHeaderValidation:
+class TestBaseHTTPTransportHeaderValidation:
     """Test suite for HTTP transport header validation."""
 
     @pytest.fixture
-    def transport(self) -> HTTPTransport[Any]:
-        return HTTPTransport[Any](AsyncMock(spec=MiniMCP[Any]))
+    def transport(self) -> BaseHTTPTransport[Any]:
+        return BaseHTTPTransport[Any](AsyncMock(spec=MiniMCP[Any]))
 
-    def test_validate_accept_headers_valid(self, transport: HTTPTransport[Any]):
+    def test_validate_accept_headers_valid(self, transport: BaseHTTPTransport[Any]):
         """Test validate accept headers with valid headers."""
         headers = {"Accept": "application/json, text/plain"}
 
         transport._validate_accept_headers(headers)
 
-    def test_validate_accept_headers_invalid(self, transport: HTTPTransport[Any]):
+    def test_validate_accept_headers_invalid(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_accept_headers with invalid headers."""
         headers = {"Accept": "text/plain, text/html"}
 
@@ -341,7 +341,7 @@ class TestHTTPTransportHeaderValidation:
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
 
-    def test_validate_accept_headers_missing(self, transport: HTTPTransport[Any]):
+    def test_validate_accept_headers_missing(self, transport: BaseHTTPTransport[Any]):
         """Test validate accept headers with missing Accept header."""
         headers: dict[str, str] = {}
 
@@ -350,25 +350,25 @@ class TestHTTPTransportHeaderValidation:
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
 
-    def test_validate_accept_headers_with_quality_values(self, transport: HTTPTransport[Any]):
+    def test_validate_accept_headers_with_quality_values(self, transport: BaseHTTPTransport[Any]):
         """Test validate accept headers with quality values."""
         headers = {"Accept": "application/json; q=0.9, text/plain; q=0.1"}
 
         transport._validate_accept_headers(headers)
 
-    def test_validate_accept_headers_case_insensitive(self, transport: HTTPTransport[Any]):
+    def test_validate_accept_headers_case_insensitive(self, transport: BaseHTTPTransport[Any]):
         """Test validate accept headers is case insensitive."""
         headers = {"Accept": "APPLICATION/JSON"}
 
         transport._validate_accept_headers(headers)
 
-    def test_validate_content_type_valid(self, transport: HTTPTransport[Any]):
+    def test_validate_content_type_valid(self, transport: BaseHTTPTransport[Any]):
         """Test validate content type with valid content type."""
         headers = {"Content-Type": "application/json"}
 
         transport._validate_content_type(headers)
 
-    def test_validate_content_type_invalid(self, transport: HTTPTransport[Any]):
+    def test_validate_content_type_invalid(self, transport: BaseHTTPTransport[Any]):
         """Test validate content type with invalid content type."""
         headers = {"Content-Type": "text/plain"}
 
@@ -377,7 +377,7 @@ class TestHTTPTransportHeaderValidation:
 
         assert exc_info.value.status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
 
-    def test_validate_content_type_missing(self, transport: HTTPTransport[Any]):
+    def test_validate_content_type_missing(self, transport: BaseHTTPTransport[Any]):
         """Test validate content type with missing Content-Type header."""
         headers: dict[str, str] = {}
 
@@ -386,26 +386,26 @@ class TestHTTPTransportHeaderValidation:
 
         assert exc_info.value.status_code == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
 
-    def test_validate_content_type_with_charset(self, transport: HTTPTransport[Any]):
+    def test_validate_content_type_with_charset(self, transport: BaseHTTPTransport[Any]):
         """Test validate content type with charset parameter."""
         headers = {"Content-Type": "application/json; charset=utf-8"}
 
         transport._validate_content_type(headers)
 
-    def test_validate_content_type_case_insensitive(self, transport: HTTPTransport[Any]):
+    def test_validate_content_type_case_insensitive(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_content_type is case insensitive."""
         headers = {"Content-Type": "APPLICATION/JSON"}
 
         transport._validate_content_type(headers)
 
-    def test_validate_protocol_version_valid(self, transport: HTTPTransport[Any]):
+    def test_validate_protocol_version_valid(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_protocol_version with valid version."""
         headers = {"MCP-Protocol-Version": "2025-06-18"}
         body = '{"jsonrpc": "2.0", "method": "test", "id": 1}'
 
         transport._validate_protocol_version(headers, body)
 
-    def test_validate_protocol_version_invalid(self, transport: HTTPTransport[Any]):
+    def test_validate_protocol_version_invalid(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_protocol_version with invalid version."""
         headers = {"MCP-Protocol-Version": "invalid-version"}
         body = '{"jsonrpc": "2.0", "method": "test", "id": 1}'
@@ -416,42 +416,42 @@ class TestHTTPTransportHeaderValidation:
         assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
         assert "Unsupported protocol version" in str(exc_info.value)
 
-    def test_validate_protocol_version_missing_uses_default(self, transport: HTTPTransport[Any]):
+    def test_validate_protocol_version_missing_uses_default(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_protocol_version uses default when header is missing."""
         headers: dict[str, str] = {}
         body = '{"jsonrpc": "2.0", "method": "test", "id": 1}'
 
         transport._validate_protocol_version(headers, body)
 
-    def test_validate_protocol_version_initialize_request_skipped(self, transport: HTTPTransport[Any]):
+    def test_validate_protocol_version_initialize_request_skipped(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_protocol_version skips validation for initialize requests."""
         headers = {"MCP-Protocol-Version": "invalid-version"}
         body = '{"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}'
 
         transport._validate_protocol_version(headers, body)
 
-    def test_validate_protocol_version_malformed_body_ignored(self, transport: HTTPTransport[Any]):
+    def test_validate_protocol_version_malformed_body_ignored(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_protocol_version ignores malformed JSON."""
         headers = {"MCP-Protocol-Version": "2025-06-18"}
         body = "not valid json"
 
         transport._validate_protocol_version(headers, body)
 
-    def test_validate_protocol_version_case_insensitive_header(self, transport: HTTPTransport[Any]):
+    def test_validate_protocol_version_case_insensitive_header(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_protocol_version with case insensitive header."""
         headers = {"mcp-protocol-version": "2025-06-18"}
         body = '{"jsonrpc": "2.0", "method": "test", "id": 1}'
 
         transport._validate_protocol_version(headers, body)
 
-    def test_multiple_needed_content_types(self, transport: HTTPTransport[Any]):
+    def test_multiple_needed_content_types(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_accept_headers with multiple needed content types."""
         headers = {"Accept": "application/json, text/event-stream"}
         transport.RESPONSE_MEDIA_TYPES = frozenset[str]({"application/json", "text/event-stream"})
 
         transport._validate_accept_headers(headers)
 
-    def test_partial_needed_content_types(self, transport: HTTPTransport[Any]):
+    def test_partial_needed_content_types(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_accept_headers when only some needed types are accepted."""
         headers = {"Accept": "application/json"}
         transport.RESPONSE_MEDIA_TYPES = frozenset[str]({"application/json", "text/event-stream"})
@@ -461,7 +461,7 @@ class TestHTTPTransportHeaderValidation:
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
 
-    def test_empty_accept_header(self, transport: HTTPTransport[Any]):
+    def test_empty_accept_header(self, transport: BaseHTTPTransport[Any]):
         """Test _validate_accept_headers with empty Accept header."""
         headers = {"Accept": ""}
 
@@ -470,7 +470,7 @@ class TestHTTPTransportHeaderValidation:
 
         assert exc_info.value.status_code == HTTPStatus.NOT_ACCEPTABLE
 
-    def test_whitespace_in_headers(self, transport: HTTPTransport[Any]):
+    def test_whitespace_in_headers(self, transport: BaseHTTPTransport[Any]):
         """Test header parsing with extra whitespace."""
         headers = {"Accept": " application/json , text/plain ", "Content-Type": " application/json ; charset=utf-8 "}
 

@@ -42,7 +42,7 @@ MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
 MEDIA_TYPE_JSON = "application/json"
 
 
-class HTTPTransport(Generic[ScopeT]):
+class BaseHTTPTransport(Generic[ScopeT]):
     """
     HTTP transport implementations for MiniMCP.
 

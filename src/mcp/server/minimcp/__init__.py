@@ -4,7 +4,7 @@ from mcp.server.minimcp.managers.context_manager import Context
 from mcp.server.minimcp.minimcp import MiniMCP
 from mcp.server.minimcp.minimcp_types import Message, NoMessage, Send
 from mcp.server.minimcp.responder import Responder
-from mcp.server.minimcp.transports.http import HTTPTransport
+from mcp.server.minimcp.transports.base_http import BaseHTTPTransport as HTTPTransport
 from mcp.server.minimcp.transports.stdio import StdioTransport
 from mcp.server.minimcp.transports.streamable_http import StreamableHTTPTransport
 
