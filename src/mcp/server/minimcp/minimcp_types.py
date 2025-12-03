@@ -1,9 +1,11 @@
 from collections.abc import Awaitable, Callable, Mapping
 from enum import Enum
 from http import HTTPStatus
-from typing import NamedTuple
+from typing import Final, Literal, NamedTuple
 
 from anyio.streams.memory import MemoryObjectReceiveStream
+
+MESSAGE_ENCODING: Final[Literal["utf-8"]] = "utf-8"
 
 # --- MCP response types ---
 Message = str

@@ -11,7 +11,7 @@ from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import Message, NoMessage
+from mcp.server.minimcp.minimcp_types import MESSAGE_ENCODING, Message, NoMessage
 
 logger = logging.getLogger(__name__)
 
@@ -63,8 +63,10 @@ class StdioTransport(Generic[ScopeT]):
         """
         self.minimcp = minimcp
 
-        self.stdin = stdin or anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding="utf-8"))
-        self.stdout = stdout or anyio.wrap_file(TextIOWrapper(sys.stdout.buffer, encoding="utf-8", line_buffering=True))
+        self.stdin = stdin or anyio.wrap_file(TextIOWrapper(sys.stdin.buffer, encoding=MESSAGE_ENCODING))
+        self.stdout = stdout or anyio.wrap_file(
+            TextIOWrapper(sys.stdout.buffer, encoding=MESSAGE_ENCODING, line_buffering=True)
+        )
 
     async def write_msg(self, response_msg: Message) -> None:
         """Write a message to stdout.
