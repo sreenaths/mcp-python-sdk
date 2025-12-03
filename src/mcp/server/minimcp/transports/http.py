@@ -1,3 +1,4 @@
+import json
 import logging
 from collections.abc import Mapping
 from http import HTTPStatus
@@ -39,7 +40,6 @@ class RequestValidationError(Exception):
 MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
 
 MEDIA_TYPE_JSON = "application/json"
-MEDIA_TYPE_TEXT = "text/plain"
 
 
 class HTTPTransport(Generic[ScopeT]):
@@ -186,12 +186,12 @@ class HTTPTransport(Generic[ScopeT]):
             MCPHTTPResponse with 405 METHOD_NOT_ALLOWED status and an Allow header
             listing the supported methods.
         """
-        content = "Method Not Allowed"
+        content = json.dumps({"message": "Method Not Allowed"})
         headers = {
             "Allow": ", ".join(self.SUPPORTED_HTTP_METHODS),
         }
 
-        return MCPHTTPResponse(HTTPStatus.METHOD_NOT_ALLOWED, content, MEDIA_TYPE_TEXT, headers=headers)
+        return MCPHTTPResponse(HTTPStatus.METHOD_NOT_ALLOWED, content, MEDIA_TYPE_JSON, headers=headers)
 
     def _validate_accept_headers(self, headers: Mapping[str, str]) -> MCPHTTPResponse | None:
         """
