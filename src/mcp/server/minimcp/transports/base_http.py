@@ -34,7 +34,7 @@ class MCPHTTPResponse(NamedTuple):
     """
 
     status_code: HTTPStatus
-    content: Message | NoMessage | MemoryObjectReceiveStream[Message] | None = None
+    content: Message | MemoryObjectReceiveStream[Message] | None = None
     media_type: str | None = None
     headers: Mapping[str, str] | None = None
 
@@ -166,7 +166,7 @@ class BaseHTTPTransport(Generic[ScopeT]):
             response = await self.minimcp.handle(body, send_callback, scope)
 
             # Process the response
-            if isinstance(response, NoMessage):
+            if response == NoMessage.NOTIFICATION:
                 return MCPHTTPResponse(HTTPStatus.ACCEPTED)
             else:
                 return MCPHTTPResponse(HTTPStatus.OK, response, MEDIA_TYPE_JSON)

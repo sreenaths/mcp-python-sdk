@@ -15,7 +15,6 @@ class NoMessage(Enum):
     """
 
     NOTIFICATION = "notification"  # Response to a client notification
-    RESPONSE = "response"  # Response to a client request
 
 
 # --- Message callback type ---
