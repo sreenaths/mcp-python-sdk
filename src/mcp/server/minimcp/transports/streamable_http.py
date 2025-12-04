@@ -157,6 +157,7 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
     _tg: TaskGroup | None
 
     RESPONSE_MEDIA_TYPES: frozenset[str] = frozenset[str]([MEDIA_TYPE_JSON, MEDIA_TYPE_SSE])
+    SUPPORTED_HTTP_METHODS: frozenset[str] = frozenset[str](["POST"])
 
     def __init__(
         self,
