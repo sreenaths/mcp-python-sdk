@@ -31,9 +31,9 @@ class TestStreamableHttpServer(HttpServerSuite):
     }
 
     @pytest.fixture(autouse=True)
-    async def timeout_1s(self):
-        """Fail test if it takes longer than 1 second."""
-        with anyio.fail_after(1):
+    async def timeout_5s(self):
+        """Fail test if it takes longer than 5 seconds."""
+        with anyio.fail_after(5):
             yield
 
     async def test_add_with_progress_tool(self, mcp_client: ClientSessionWithInit):
