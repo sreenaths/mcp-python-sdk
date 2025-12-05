@@ -30,6 +30,12 @@ class TestHttpServer:
         "Accept": "application/json",
     }
 
+    @pytest.fixture(autouse=True)
+    async def timeout_1s(self):
+        """Fail test if it takes longer than 1 second."""
+        with anyio.fail_after(1):
+            yield
+
     @pytest.fixture(scope="class")
     async def mcp_client(self, http_test_server_process: Any) -> AsyncGenerator[ClientSessionWithInit, None]:
         """Create and manage an MCP client connected to our test server via StreamableHttpTransport."""

@@ -30,6 +30,12 @@ class TestStreamableHttpServer(HttpServerSuite):
         "Accept": "application/json, text/event-stream",
     }
 
+    @pytest.fixture(autouse=True)
+    async def timeout_1s(self):
+        """Fail test if it takes longer than 1 second."""
+        with anyio.fail_after(1):
+            yield
+
     async def test_add_with_progress_tool(self, mcp_client: ClientSessionWithInit):
         """Test calling the add_with_progress tool which sends progress notifications."""
         # Test that the tool exists and can be called
