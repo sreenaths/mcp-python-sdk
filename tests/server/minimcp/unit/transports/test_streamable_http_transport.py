@@ -15,6 +15,7 @@ from mcp.server.minimcp.minimcp_types import Message, NoMessage, Send
 from mcp.server.minimcp.transports.base_http import MCPHTTPResponse
 from mcp.server.minimcp.transports.streamable_http import (
     SSE_HEADERS,
+    MCPStreamingHTTPResponse,
     StreamableHTTPTransport,
 )
 from mcp.types import LATEST_PROTOCOL_VERSION
@@ -315,7 +316,7 @@ class TestStreamableHTTPTransport:
         """Test that multiple requests can be handled concurrently."""
         handler = AsyncMock(return_value='{"result": "success"}')
         transport.minimcp.handle = handler
-        results: list[MCPHTTPResponse] = []
+        results: list[MCPHTTPResponse | MCPStreamingHTTPResponse] = []
 
         async with transport:
             async with anyio.create_task_group() as tg:
@@ -677,7 +678,7 @@ class TestStreamableHTTPTransportHeaderValidation:
         """Test concurrent stateless requests with different HTTP methods."""
         handler = AsyncMock(return_value='{"result": "success"}')
         transport.minimcp.handle = handler
-        results: list[MCPHTTPResponse] = []
+        results: list[MCPHTTPResponse | MCPStreamingHTTPResponse] = []
 
         async with transport:
             async with anyio.create_task_group() as tg:

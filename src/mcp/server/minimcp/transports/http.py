@@ -9,6 +9,7 @@ from typing_extensions import override
 
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
+from mcp.server.minimcp.minimcp_types import MESSAGE_ENCODING
 from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, BaseHTTPTransport, MCPHTTPResponse
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ class HTTPTransport(BaseHTTPTransport[ScopeT]):
         Args:
             method: The HTTP method of the request.
             headers: HTTP request headers.
-            body: HTTP request body.
+            body: HTTP request body as a string.
             scope: Optional message scope passed to the MiniMCP server.
 
         Returns:
@@ -61,10 +62,10 @@ class HTTPTransport(BaseHTTPTransport[ScopeT]):
         Returns:
             MiniMCP server response formatted as a Starlette Response object.
         """
-        msg = await request.body()
-        msg_str = msg.decode("utf-8")
+        body = await request.body()
+        body_str = body.decode(MESSAGE_ENCODING)
 
-        result = await self.dispatch(request.method, request.headers, msg_str, scope)
+        result = await self.dispatch(request.method, request.headers, body_str, scope)
 
         return Response(result.content, result.status_code, result.headers, result.media_type)
 

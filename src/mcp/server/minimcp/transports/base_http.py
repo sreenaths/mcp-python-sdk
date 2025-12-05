@@ -5,7 +5,6 @@ from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Generic, NamedTuple
 
-from anyio.streams.memory import MemoryObjectReceiveStream
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import Response
@@ -15,10 +14,15 @@ from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import Message, NoMessage, Send
+from mcp.server.minimcp.minimcp_types import NoMessage, Send
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 logger = logging.getLogger(__name__)
+
+
+MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
+
+MEDIA_TYPE_JSON = "application/json"
 
 
 class MCPHTTPResponse(NamedTuple):
@@ -27,16 +31,15 @@ class MCPHTTPResponse(NamedTuple):
 
     Attributes:
         status_code: The HTTP status code to return to the client.
-        content: The response content, which can be a Message, NoMessage,
-                a stream of Messages, or None.
+        content: The response content as a string or None. The content must be utf-8 encoded whenever required.
         media_type: The MIME type of the response content (e.g., "application/json").
         headers: Additional HTTP headers to include in the response.
     """
 
     status_code: HTTPStatus
-    content: Message | MemoryObjectReceiveStream[Message] | None = None
-    media_type: str | None = None
+    content: str | None = None
     headers: Mapping[str, str] | None = None
+    media_type: str = MEDIA_TYPE_JSON
 
 
 class RequestValidationError(Exception):
@@ -54,11 +57,6 @@ class RequestValidationError(Exception):
         """
         super().__init__(message)
         self.status_code = status_code
-
-
-MCP_PROTOCOL_VERSION_HEADER = "MCP-Protocol-Version"
-
-MEDIA_TYPE_JSON = "application/json"
 
 
 class BaseHTTPTransport(Generic[ScopeT]):
@@ -91,7 +89,7 @@ class BaseHTTPTransport(Generic[ScopeT]):
         Args:
             method: The HTTP method of the request.
             headers: HTTP request headers.
-            body: HTTP request body.
+            body: HTTP request body as a string.
             scope: Optional message scope passed to the MiniMCP server.
         """
         raise NotImplementedError("Subclasses must implement this method")
@@ -154,33 +152,33 @@ class BaseHTTPTransport(Generic[ScopeT]):
             if response == NoMessage.NOTIFICATION:
                 return MCPHTTPResponse(HTTPStatus.ACCEPTED)
             else:
-                return MCPHTTPResponse(HTTPStatus.OK, response, MEDIA_TYPE_JSON)
-
+                return MCPHTTPResponse(HTTPStatus.OK, response)
         except RequestValidationError as e:
-            content, error_message = json_rpc.build_error_message(
-                e,
-                body,
-                types.INVALID_REQUEST,
-                include_stack_trace=True,
-            )
-            logger.error(error_message)
-            return MCPHTTPResponse(e.status_code, content, MEDIA_TYPE_JSON)
+            return self._build_error_response(e, body, types.INVALID_REQUEST, e.status_code)
         except InvalidMessageError as e:
-            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response, MEDIA_TYPE_JSON)
+            return MCPHTTPResponse(HTTPStatus.BAD_REQUEST, e.response)
         except Exception as e:
             # Handler shouldn't raise any exceptions other than InvalidMessageError
             # Ideally we should not get here
-            return self._build_unexpected_error_response(e, body)
+            logger.exception("Unexpected error in %s: %s", self.__class__.__name__, e)
+            return self._build_error_response(e, body)
 
-    def _build_unexpected_error_response(self, error: Exception, body: str) -> MCPHTTPResponse:
+    def _build_error_response(
+        self,
+        error: Exception,
+        body: str,
+        json_rpc_error_code: int = types.INTERNAL_ERROR,
+        http_status_code: HTTPStatus = HTTPStatus.INTERNAL_SERVER_ERROR,
+    ) -> MCPHTTPResponse:
         response, error_message = json_rpc.build_error_message(
             error,
             body,
-            types.INTERNAL_ERROR,
+            json_rpc_error_code,
             include_stack_trace=True,
         )
-        logger.error("Unexpected error in %s: %s", self.__class__.__name__, error_message, exc_info=error)
-        return MCPHTTPResponse(HTTPStatus.INTERNAL_SERVER_ERROR, response, MEDIA_TYPE_JSON)
+        logger.error("Error in %s - %s", self.__class__.__name__, error_message, exc_info=error)
+
+        return MCPHTTPResponse(http_status_code, response)
 
     def _handle_unsupported_request(self) -> MCPHTTPResponse:
         """
@@ -195,7 +193,7 @@ class BaseHTTPTransport(Generic[ScopeT]):
             "Allow": ", ".join(self.SUPPORTED_HTTP_METHODS),
         }
 
-        return MCPHTTPResponse(HTTPStatus.METHOD_NOT_ALLOWED, content, MEDIA_TYPE_JSON, headers=headers)
+        return MCPHTTPResponse(HTTPStatus.METHOD_NOT_ALLOWED, content, headers)
 
     def _validate_accept_headers(self, headers: Mapping[str, str]) -> MCPHTTPResponse | None:
         """

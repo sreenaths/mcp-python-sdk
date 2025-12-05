@@ -3,7 +3,7 @@ from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from http import HTTPStatus
 from types import TracebackType
-from typing import Any
+from typing import Any, NamedTuple
 
 import anyio
 from anyio.abc import TaskGroup, TaskStatus
@@ -18,7 +18,7 @@ from typing_extensions import override
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.exceptions import MCPRuntimeError, MiniMCPError
 from mcp.server.minimcp.managers.context_manager import ScopeT
-from mcp.server.minimcp.minimcp_types import Message
+from mcp.server.minimcp.minimcp_types import MESSAGE_ENCODING, Message
 from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, BaseHTTPTransport, MCPHTTPResponse
 
 logger = logging.getLogger(__name__)
@@ -31,6 +31,23 @@ SSE_HEADERS = {
     "Connection": "keep-alive",
     "Content-Type": MEDIA_TYPE_SSE,
 }
+
+
+class MCPStreamingHTTPResponse(NamedTuple):
+    """
+    Represents the response from a MiniMCP server to a client HTTP request.
+
+    Attributes:
+        status_code: The HTTP status code to return to the client.
+        content: The response content as a MemoryObjectReceiveStream.
+        media_type: The MIME type of the response response stream ("text/event-stream").
+        headers: Additional HTTP headers to include in the response.
+    """
+
+    status_code: HTTPStatus
+    content: MemoryObjectReceiveStream[str]
+    headers: Mapping[str, str] = SSE_HEADERS
+    media_type: str = MEDIA_TYPE_SSE
 
 
 class StreamManager:
@@ -51,12 +68,12 @@ class StreamManager:
     """
 
     _lock: anyio.Lock
-    _on_create: Callable[[MCPHTTPResponse], None]
+    _on_create: Callable[[MCPStreamingHTTPResponse], None]
 
     _send_stream: MemoryObjectSendStream[Message] | None
     _receive_stream: MemoryObjectReceiveStream[Message] | None
 
-    def __init__(self, on_create: Callable[[MCPHTTPResponse], None]) -> None:
+    def __init__(self, on_create: Callable[[MCPStreamingHTTPResponse], None]) -> None:
         """
         Args:
             on_create: Callback to be called when the streams are created.
@@ -88,7 +105,7 @@ class StreamManager:
                 async with self._lock:
                     if self._send_stream is None:
                         send_stream, receive_stream = anyio.create_memory_object_stream[Message](0)
-                        self._on_create(MCPHTTPResponse(HTTPStatus.OK, receive_stream, headers=SSE_HEADERS))
+                        self._on_create(MCPStreamingHTTPResponse(HTTPStatus.OK, receive_stream))
                         self._send_stream = send_stream
                         self._receive_stream = receive_stream
 
@@ -213,14 +230,14 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
     @override
     async def dispatch(
         self, method: str, headers: Mapping[str, str], body: str, scope: ScopeT | None = None
-    ) -> MCPHTTPResponse:
+    ) -> MCPHTTPResponse | MCPStreamingHTTPResponse:
         """
         Dispatch an HTTP request to the MiniMCP server.
 
         Args:
             method: The HTTP method of the request.
             headers: HTTP request headers.
-            body: HTTP request body.
+            body: HTTP request body as a string.
             scope: Optional message scope passed to the MiniMCP server.
 
         Returns:
@@ -236,7 +253,7 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
 
         if method == "POST":
             # Start _handle_post_request in a separate task and await for readiness.
-            # Once ready _handle_post_request_task returns a MCPHTTPResponse.
+            # Once ready _handle_post_request_task returns a MCPHTTPResponse or MCPStreamingHTTPResponse.
             return await self._tg.start(self._handle_post_request_task, headers, body, scope)
         else:
             return self._handle_unsupported_request()
@@ -254,11 +271,10 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
             MiniMCP server response formatted as a Starlette Response object.
         """
         msg = await request.body()
-        msg_str = msg.decode("utf-8")
+        body_str = msg.decode(MESSAGE_ENCODING)
+        result = await self.dispatch(request.method, request.headers, body_str, scope)
 
-        result = await self.dispatch(request.method, request.headers, msg_str, scope)
-
-        if isinstance(result.content, MemoryObjectReceiveStream):
+        if isinstance(result, MCPStreamingHTTPResponse):
             return EventSourceResponse(result.content, headers=result.headers, ping=self._ping_interval)
 
         return Response(result.content, result.status_code, result.headers, result.media_type)
@@ -286,7 +302,7 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
         headers: Mapping[str, str],
         body: str,
         scope: ScopeT | None,
-        task_status: TaskStatus[MCPHTTPResponse],
+        task_status: TaskStatus[MCPHTTPResponse | MCPStreamingHTTPResponse],
     ):
         """
         This is the special sauce that makes the smart StreamableHTTPTransport possible.
@@ -298,7 +314,7 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
 
         Args:
             headers: HTTP request headers.
-            body: HTTP request body.
+            body: HTTP request body as a string.
             scope: Optional message scope passed to the MiniMCP server.
             task_status: Task status object to communicate task readiness and result.
         """
@@ -310,7 +326,7 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
             result = await self._handle_post_request(headers, body, scope, send_callback=stream_manager.create_and_send)
 
             if stream_manager.is_streaming():
-                if isinstance(result.content, Message):
+                if result.content:
                     await stream_manager.send(result.content)
             else:
                 task_status.started(result)
@@ -320,9 +336,10 @@ class StreamableHTTPTransport(BaseHTTPTransport[ScopeT]):
             if stream_manager.is_streaming():
                 await stream_manager.close(self._receive_close_delay)
             elif not_completed:
-                # This should never happen, but provides a fallback to ensure the task is always started.
+                # This should never happen, _handle_post_request should handle all exceptions,
+                # but adding this fallback to ensure the task is always started.
                 try:
                     error = MCPRuntimeError("Task was not completed by StreamableHTTPTransport")
-                    task_status.started(self._build_unexpected_error_response(error, body))
+                    task_status.started(self._build_error_response(error, body))
                 except RuntimeError as e:
                     logger.error("Task is not completed: %s", e)
