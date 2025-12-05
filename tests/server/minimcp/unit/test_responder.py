@@ -12,6 +12,13 @@ from mcp.server.minimcp.responder import Responder
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture(autouse=True)
+async def timeout_5s():
+    """Fail test if it takes longer than 5 seconds."""
+    with anyio.fail_after(5):
+        yield
+
+
 class TestResponder:
     """Test suite for Responder class."""
 
@@ -65,7 +72,7 @@ class TestResponder:
         responder._progress_token = "test-progress-token"
         return responder
 
-    def test_init_basic(self, valid_request_message: Message, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_init_basic(self, valid_request_message: Message, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test basic Responder initialization."""
         responder = Responder(valid_request_message, mock_send, mock_time_limiter)
 
@@ -75,7 +82,7 @@ class TestResponder:
         # Progress token extraction may fail due to MCP validation, which is acceptable
         # The important thing is that the responder is created successfully
 
-    def test_init_without_progress_token(
+    async def test_init_without_progress_token(
         self, request_without_progress_token: Message, mock_send: AsyncMock, mock_time_limiter: Mock
     ):
         """Test Responder initialization without progress token."""
@@ -86,7 +93,7 @@ class TestResponder:
         assert responder._time_limiter is mock_time_limiter
         assert responder._progress_token is None
 
-    def test_get_progress_token_valid_request(self):
+    async def test_get_progress_token_valid_request(self):
         """Test extracting progress token from valid request."""
         # Create a responder with a mocked progress token
         mock_send = AsyncMock()
@@ -99,25 +106,25 @@ class TestResponder:
 
         assert responder._progress_token == "test-progress-token"
 
-    def test_get_progress_token_no_token(self, responder_no_token: Responder):
+    async def test_get_progress_token_no_token(self, responder_no_token: Responder):
         """Test extracting progress token when none exists."""
         assert responder_no_token._progress_token is None
 
-    def test_get_progress_token_invalid_json(self, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_get_progress_token_invalid_json(self, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test progress token extraction with invalid JSON."""
         invalid_json = '{"invalid": json}'
         responder = Responder(invalid_json, mock_send, mock_time_limiter)
 
         assert responder._progress_token is None
 
-    def test_get_progress_token_invalid_structure(self, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_get_progress_token_invalid_structure(self, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test progress token extraction with invalid message structure."""
         invalid_structure = json.dumps({"not": "a valid request"})
         responder = Responder(invalid_structure, mock_send, mock_time_limiter)
 
         assert responder._progress_token is None
 
-    def test_get_progress_token_missing_meta(self, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_get_progress_token_missing_meta(self, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test progress token extraction when meta is missing."""
         no_meta = json.dumps(
             {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "test_tool", "arguments": {}}}
@@ -126,7 +133,7 @@ class TestResponder:
 
         assert responder._progress_token is None
 
-    def test_get_progress_token_missing_progress_token(self, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_get_progress_token_missing_progress_token(self, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test progress token extraction when progressToken is missing from meta."""
         no_progress_token = json.dumps(
             {
@@ -388,7 +395,7 @@ class TestResponder:
         # Timer should still be reset even if send fails
         mock_time_limiter.reset.assert_called_once()
 
-    def test_progress_token_extraction_edge_cases(self, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_progress_token_extraction_edge_cases(self, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test progress token extraction with various edge cases."""
         # Test with nested structure
         nested_request = json.dumps(
@@ -408,7 +415,7 @@ class TestResponder:
         # Should handle gracefully and return None
         assert responder._progress_token is None or isinstance(responder._progress_token, dict)
 
-    def test_progress_token_extraction_with_null_values(self, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_progress_token_extraction_with_null_values(self, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test progress token extraction with null values."""
         null_token_request = json.dumps(
             {
@@ -458,7 +465,7 @@ class TestResponder:
         assert result is None
         assert "report_progress failed: Progress token is not available" in caplog.text
 
-    def test_responder_attributes(self, responder: Responder):
+    async def test_responder_attributes(self, responder: Responder):
         """Test that Responder has expected attributes."""
         assert hasattr(responder, "_request")
         assert hasattr(responder, "_progress_token")
@@ -486,7 +493,7 @@ class TestResponder:
 
         assert notification_dict == expected_structure
 
-    def test_get_progress_token_with_different_request_types(self, mock_send: AsyncMock, mock_time_limiter: Mock):
+    async def test_get_progress_token_with_different_request_types(self, mock_send: AsyncMock, mock_time_limiter: Mock):
         """Test progress token extraction with different request types."""
         # Since progress token extraction is complex and depends on MCP validation,
         # we'll test the behavior when manually setting the token

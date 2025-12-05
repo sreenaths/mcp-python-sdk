@@ -79,7 +79,7 @@ class TestMiniMCP:
         """Create a mock send function."""
         return AsyncMock()
 
-    def test_init_basic(self) -> None:
+    async def test_init_basic(self) -> None:
         """Test basic MiniMCP initialization."""
         server: MiniMCP[Any] = MiniMCP[Any](name="test-server")
 
@@ -93,7 +93,7 @@ class TestMiniMCP:
         assert isinstance(server.context, ContextManager)
         assert server._include_stack_trace is False
 
-    def test_init_with_all_parameters(self, minimcp_with_custom_config: MiniMCP[Any]) -> None:
+    async def test_init_with_all_parameters(self, minimcp_with_custom_config: MiniMCP[Any]) -> None:
         """Test MiniMCP initialization with all parameters."""
         server: MiniMCP[Any] = minimcp_with_custom_config
 
@@ -103,13 +103,13 @@ class TestMiniMCP:
         assert server._include_stack_trace is True
         # Note: Limiter internal attributes may vary, test behavior instead
 
-    def test_properties(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_properties(self, minimcp: MiniMCP[Any]) -> None:
         """Test MiniMCP properties."""
         assert minimcp.name == "test-server"
         assert minimcp.version == "1.0.0"
         assert minimcp.instructions == "Test server instructions"
 
-    def test_notification_options_setup(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_notification_options_setup(self, minimcp: MiniMCP[Any]) -> None:
         """Test that notification options are properly set up."""
         assert minimcp._notification_options is not None
         assert isinstance(minimcp._notification_options, NotificationOptions)
@@ -117,7 +117,7 @@ class TestMiniMCP:
         assert minimcp._notification_options.resources_changed is False
         assert minimcp._notification_options.tools_changed is False
 
-    def test_core_setup(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_core_setup(self, minimcp: MiniMCP[Any]) -> None:
         """Test that core server is properly set up."""
         assert minimcp._core.name == "test-server"
         assert minimcp._core.version == "1.0.0"
@@ -127,7 +127,7 @@ class TestMiniMCP:
         assert types.InitializeRequest in minimcp._core.request_handlers
         assert minimcp._core.request_handlers[types.InitializeRequest] == minimcp._initialize_handler
 
-    def test_managers_setup(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_managers_setup(self, minimcp: MiniMCP[Any]) -> None:
         """Test that all managers are properly initialized."""
         # Check that managers are instances of correct classes
         assert isinstance(minimcp.tool, ToolManager)
@@ -137,7 +137,7 @@ class TestMiniMCP:
 
         # Note: Manager internal structure may vary, test functionality instead
 
-    def test_parse_message_valid_request(self, minimcp: MiniMCP[Any], valid_request_message: str) -> None:
+    async def test_parse_message_valid_request(self, minimcp: MiniMCP[Any], valid_request_message: str) -> None:
         """Test parsing a valid JSON-RPC request message."""
         rpc_msg = minimcp._parse_message(valid_request_message)
 
@@ -146,7 +146,9 @@ class TestMiniMCP:
         assert rpc_msg.root.method == "initialize"
         assert rpc_msg.root.id == 1
 
-    def test_parse_message_valid_notification(self, minimcp: MiniMCP[Any], valid_notification_message: str) -> None:
+    async def test_parse_message_valid_notification(
+        self, minimcp: MiniMCP[Any], valid_notification_message: str
+    ) -> None:
         """Test parsing a valid JSON-RPC notification message."""
         rpc_msg = minimcp._parse_message(valid_notification_message)
 
@@ -154,28 +156,28 @@ class TestMiniMCP:
         assert isinstance(rpc_msg.root, types.JSONRPCNotification)
         assert rpc_msg.root.method == "notifications/initialized"
 
-    def test_parse_message_invalid_json(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_parse_message_invalid_json(self, minimcp: MiniMCP[Any]) -> None:
         """Test parsing invalid JSON raises ParserError."""
         invalid_json = '{"invalid": json}'
 
         with pytest.raises(InvalidJSONError):
             minimcp._parse_message(invalid_json)
 
-    def test_parse_message_invalid_rpc_format(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_parse_message_invalid_rpc_format(self, minimcp: MiniMCP[Any]) -> None:
         """Test parsing invalid JSON-RPC format raises InvalidParamsError."""
         invalid_rpc = json.dumps({"not": "jsonrpc"})
 
         with pytest.raises(InvalidJSONRPCMessageError):
             minimcp._parse_message(invalid_rpc)
 
-    def test_parse_message_missing_id_in_dict(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_parse_message_missing_id_in_dict(self, minimcp: MiniMCP[Any]) -> None:
         """Test parsing message without ID returns empty string."""
         message_without_id = json.dumps({"jsonrpc": "2.0", "method": "test"})
 
         message = minimcp._parse_message(message_without_id)
         assert message is not None
 
-    def test_parse_message_non_dict_json(self, minimcp: MiniMCP[Any]) -> None:
+    async def test_parse_message_non_dict_json(self, minimcp: MiniMCP[Any]) -> None:
         """Test parsing non-dict JSON returns empty message ID."""
         non_dict_json = json.dumps(["not", "a", "dict"])
 
@@ -443,7 +445,7 @@ class TestMiniMCP:
         response_dict = json.loads(result)
         assert response_dict["jsonrpc"] == "2.0"
 
-    def test_generic_type_parameter(self) -> None:
+    async def test_generic_type_parameter(self) -> None:
         """Test that MiniMCP can be parameterized with generic types."""
         # Test with string scope type
         server_str = MiniMCP[str](name="test")

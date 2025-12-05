@@ -4,6 +4,7 @@ from http import HTTPStatus
 from typing import Any, NamedTuple
 from unittest.mock import ANY, AsyncMock
 
+import anyio
 import pytest
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -44,6 +45,12 @@ class MockHTTPTransport(BaseHTTPTransport[Any]):
 
 class TestBaseHTTPTransport:
     """Test suite for HTTP transport."""
+
+    @pytest.fixture(autouse=True)
+    async def timeout_5s(self):
+        """Fail test if it takes longer than 5 seconds."""
+        with anyio.fail_after(5):
+            yield
 
     @pytest.fixture
     def accept_content_types(self) -> str:

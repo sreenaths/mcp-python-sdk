@@ -3,6 +3,7 @@ from http import HTTPStatus
 from typing import Any
 from unittest.mock import ANY, AsyncMock
 
+import anyio
 import pytest
 
 from mcp.server.minimcp import MiniMCP
@@ -16,6 +17,12 @@ pytestmark = pytest.mark.anyio
 
 class TestHTTPTransport:
     """Test suite for HTTP transport."""
+
+    @pytest.fixture(autouse=True)
+    async def timeout_5s(self):
+        """Fail test if it takes longer than 5 seconds."""
+        with anyio.fail_after(5):
+            yield
 
     @pytest.fixture
     def accept_content_types(self) -> str:
