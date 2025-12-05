@@ -26,6 +26,13 @@ from mcp.server.minimcp.minimcp_types import Message, NoMessage
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture(autouse=True)
+async def timeout_5s():
+    """Fail test if it takes longer than 5 seconds."""
+    with anyio.fail_after(5):
+        yield
+
+
 class TestMiniMCP:
     """Test suite for MiniMCP class."""
 

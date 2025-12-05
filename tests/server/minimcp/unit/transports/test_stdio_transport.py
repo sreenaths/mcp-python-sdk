@@ -29,6 +29,13 @@ def stdio_transport(mock_stdin: AsyncMock, mock_stdout: AsyncMock) -> StdioTrans
     return StdioTransport[Any](mcp, mock_stdin, mock_stdout)
 
 
+@pytest.fixture(autouse=True)
+async def timeout_5s():
+    """Fail test if it takes longer than 5 seconds."""
+    with anyio.fail_after(5):
+        yield
+
+
 class TestWriteMsg:
     """Test suite for write_msg function."""
 

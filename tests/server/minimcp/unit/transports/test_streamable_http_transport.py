@@ -22,6 +22,13 @@ from mcp.types import LATEST_PROTOCOL_VERSION
 pytestmark = pytest.mark.anyio
 
 
+@pytest.fixture(autouse=True)
+async def timeout_5s():
+    """Fail test if it takes longer than 5 seconds."""
+    with anyio.fail_after(5):
+        yield
+
+
 class TestStreamableHTTPTransport:
     """Test suite for StreamableHTTPTransport."""
 
