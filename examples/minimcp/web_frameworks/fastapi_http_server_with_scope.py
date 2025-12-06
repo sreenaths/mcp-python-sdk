@@ -16,7 +16,7 @@ How to run:
     # Start the server (default: http://127.0.0.1:8000)
     uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app
 
-Testing with basic auth (admin/admin):
+Testing with basic auth (Not validated, any username/password will work):
 
     # 1. Ping the MCP server
     curl -X POST http://127.0.0.1:8000/mcp \
@@ -60,8 +60,7 @@ Testing with basic auth (admin/admin):
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-
-from examples.minimcp.web_frameworks.issue_tracker_mcp import Scope, mcp_transport
+from .issue_tracker_mcp import Scope, mcp_transport
 
 # --- FastAPI Application ---
 app = FastAPI()
