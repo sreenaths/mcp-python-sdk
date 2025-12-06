@@ -290,24 +290,11 @@ The official MCP specification currently defines two standard transport mechanis
 | HTTP            | Request–response | Simple REST-like message handling                                   |
 | Streamable HTTP | Bidirectional    | Advanced message handling with notifications, progress updates etc. |
 
-HTTP is a subset of Streamable HTTP and doesn't support bidirectional (server to client) communication. However, as shown in the integration example, it can be added as a RESTful API endpoint in any Python application to host remote MCP servers. Importantly, it remains compatible with Streamable HTTP MCP clients.
+HTTP is a subset of Streamable HTTP and does not support bidirectional (server-to-client) communication. However, as shown in the integration example, it can be added as an API endpoint in any Python application to host remote MCP servers. Importantly, it remains compatible with Streamable HTTP MCP clients.
 
-MiniMCP provides a `Smart Streamable HTTP` implementation. It adapts to usage patterns — if the handler simply returns a message, the server replies with a normal JSON HTTP response. An event stream is opened only when the server needs to push notifications to the client. To keep things simple and stateless, current implementation uses polling to keep the stream alive. Resumability in the case of a connection lose could be implemented in a future iteration.
+MiniMCP provides a `Smart Streamable HTTP` implementation that adapts to usage pattern — if the handler simply returns a message, the server replies with a normal JSON HTTP response. An event stream is opened only when the server needs to push notifications to the client. To keep things simple and stateless, the current implementation uses polling to keep the stream alive. Resumability in case of connection loss could be implemented in a future iteration.
 
-You can use the transports as shown below, or wrap `mcp.handle` in a custom function to pass a scope or manage lifecycle:
-
-```python
-# Stdio
-anyio.run(stdio.transport, mcp.handle)
-
-# HTTP
-await starlette.http_transport(mcp.handle, request)
-
-# Streamable HTTP
-await starlette.streamable_http_transport(mcp.handle, request)
-```
-
-For more details on supported transports, please check the [specification compliance](../docs/minimcp-transport-specification-compliance.md) document.
+Check out [the Math MCP examples](../../examples/minimcp/math_mcp/) to see how each transport can be used.
 
 ## Testing
 
@@ -317,18 +304,21 @@ For detailed information about the test suite, coverage, and running tests, see 
 
 ## Error Handling
 
-MiniMCP implements a centralized error handling mechanism following JSON-RPC 2.0 and MCP specifications. Errors are categorized into three types:
+MiniMCP implements a comprehensive error handling system following JSON-RPC 2.0 and MCP specifications. It is designed to bubble up the error information to the client and continue processing. Its architecture cleanly distinguishes between external, client-exposed errors (MiniMCPError subclasses) and internal, MCP-handled errors (InternalMCPError subclasses).
 
 ### Protocol-Level Errors
-The `MiniMCP.handle()` method provides centralized exception handling that catches all MCP-related errors. Parse and message validation errors are re-raised as `InvalidMessageError` that transport layers must handle, while other errors are returned as formatted JSON-RPC error responses. As the specification
 
-### Tool Execution Errors
-As suggested by the MCP specification, tool execution errors are returned in the `CallToolResult` with `isError: true`.
+The `MiniMCP.handle()` method provides centralized error handling for all protocol-level errors. Parse errors and JSON-RPC validation errors are re-raised as `InvalidMessageError`, which transport layers must handle explicitly. Other internal errors (invalid parameters, method not found, resource not found, runtime errors etc.) are caught and returned as formatted JSON-RPC error responses with appropriate error codes per the specification.
+
+Tool errors use a dual mechanism as specified by MCP:
+1. Tool registration errors, invalid arguments, and runtime failures are returned as JSON-RPC errors.
+2. Business logic errors within tool handlers (e.g., API failures, invalid data) are caught by the low-level MCP core and returned in `CallToolResult` with `isError: true`, allowing the client to handle them appropriately.
 
 ### Transport Error Handling
-HTTP transports catch `RequestValidationError` (header/version validation), `InvalidMessageError` (parse/JSON-RPC errors), and unexpected exceptions, returning appropriate HTTP status codes (400, 404, 422, 500) with JSON-RPC error bodies. Stdio transport catches all exceptions including `InvalidMessageError`, formats them as JSON-RPC errors, and writes them to stdout without terminating the connection.
 
-
+Each transport implements error handling tailored to its communication model:
+- **HTTP transports**: Performs request (header/version) validation, and catches `InvalidMessageError` and other unexpected exceptions. The errors are then formatted as JSON-RPC error messages and return with appropriate HTTP status codes.
+- **Stdio transport**: Catches all exceptions including `InvalidMessageError`, formats them as JSON-RPC errors, and writes them to stdout. The connection remains active to continue processing subsequent messages.
 
 ## Examples
 
