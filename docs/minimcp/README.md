@@ -90,7 +90,7 @@ Only feature that's not expected to be built into MiniMCP in the foreseeable fut
 
 ## Using MiniMCP
 
-The snippets below provide a quick overview of how to use MiniMCP. Check out the [examples](../examples/minimcp/) for more.
+The snippets below provide a quick overview of how to use MiniMCP. Check out the [examples](../../examples/minimcp/) for more.
 
 ### Installation
 
@@ -137,7 +137,6 @@ response_msg = await mcp.handle(request_msg, scope={...})
 MiniMCP can be easily deployed as an ASGI application.
 
 ```python
-from fastapi import FastAPI, Request
 from mcp.server.minimcp import MiniMCP, HTTPTransport
 
 # Create an MCP instance
@@ -152,7 +151,7 @@ def add(a:int, b:int) -> int:
 app = HTTPTransport(mcp).as_starlette("/mcp")
 ```
 
-You can now start the server using uvuicorn with four workers as follows.
+You can now start the server using uvicorn with four workers as follows.
 ```bash
 uv run uvicorn test:app --workers 4
 ```
@@ -170,6 +169,7 @@ app = FastAPI()
 
 # Create an MCP instance
 mcp = MiniMCP[dict](name="MathServer")
+transport = HTTPTransport(mcp)
 
 # Register a simple tool
 @mcp.tool(description="Add two numbers")
@@ -178,9 +178,9 @@ def add(a:int, b:int) -> int:
 
 # Host MCP server
 @app.post("/mcp")
-async def mcp(request: Request):
-    scope = {...} # Pass auth, database and mother metadata as part of scope
-    return await mcp_transport.starlette_dispatch(request, scope)
+async def handler(request: Request):
+    scope = {...} # Pass auth, database and other metadata as part of scope
+    return await transport.starlette_dispatch(request, scope)
 ```
 
 ## API Reference
@@ -254,7 +254,7 @@ mcp.prompt.get(name, args)
 
 ```python
 # As a decorator
-@mcp.resource(url, [name, title, description, mime_type, annotations, meta])
+@mcp.resource(uri, [name, title, description, mime_type, annotations, meta])
 def handler_func(...):...
 
 # Methods for programmatic access
@@ -288,7 +288,7 @@ mcp.context.get_responder() -> Responder
 
 ## Transports
 
-The official MCP specification currently defines two standard transport mechanisms: [stdio](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#stdio) and [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http). It also provides flexibility in implementations and also permits custom transports. MiniMCP uses this flexibility to introduce a third option: [HTTP transport](../docs/minimcp-transport-specification-compliance.md#2-http-transport).
+The official MCP specification currently defines two standard transport mechanisms: [stdio](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#stdio) and [Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#streamable-http). It also provides flexibility in implementations and also permits custom transports. MiniMCP uses this flexibility to introduce a third option: HTTP transport.
 
 | Transport       | Directionality   | Use Case                                                            |
 | --------------- | ---------------- | ------------------------------------------------------------------- |
@@ -336,7 +336,7 @@ uv sync --frozen --all-extras --dev
 
 ### 1. Math MCP server
 
-[First set of example](../../examples/minimcp/math_mcp/) include a [Math MCP server](../examples/minimcp/math_mcp/math_mcp.py) with prompts, resources and four tools (add, subtract, multiply, and divide). The example demonstrate how MiniMCP works with different transport mechanisms and frameworks.
+[First set of examples](../../examples/minimcp/math_mcp/) include a [Math MCP server](../../examples/minimcp/math_mcp/math_mcp.py) with prompts, resources and four tools (add, subtract, multiply, and divide). The example demonstrate how MiniMCP works with different transport mechanisms and frameworks.
 
 The table below lists the available examples along with the commands to run them.
 
@@ -363,7 +363,7 @@ Claude desktop can be configured as follows to run the Math MCP stdio example.
                 "/path/to/minimcp",
                 "run",
                 "-m",
-                "examples.minimcp.math_mcp_server.stdio"
+                "examples.minimcp.math_mcp.stdio_server"
             ]
         }
     }
