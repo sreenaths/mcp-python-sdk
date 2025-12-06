@@ -15,30 +15,30 @@ The MiniMCP test suite is a comprehensive collection of over **645 tests**, orga
 
 ```text
 tests/server/minimcp/
-├── unit/                           # Unit tests (514 tests)
-│   ├── managers/                   # Manager component tests
+├── unit/                          # Unit tests (514 tests)
+│   ├── managers/                  # Manager component tests
 │   │   ├── test_context_manager.py
 │   │   ├── test_prompt_manager.py
 │   │   ├── test_resource_manager.py
 │   │   └── test_tool_manager.py
-│   ├── transports/                 # Transport layer tests
+│   ├── transports/                # Transport layer tests
 │   │   ├── test_base_http_transport.py
 │   │   ├── test_http_transport.py
 │   │   ├── test_stdio_transport.py
 │   │   └── test_streamable_http_transport.py
-│   ├── utils/                      # Utility tests
-│   │   └── test_mcp_func.py
-│   ├── test_json_rpc.py           # JSON-RPC protocol tests
+│   ├── utils/                     # Utility tests
+│   │   ├── test_json_rpc.py       # JSON-RPC protocol tests
+│   │   └── test_mcp_func.py       # MCP function wrapper tests
 │   ├── test_limiter.py            # Rate limiting tests
 │   ├── test_minimcp.py            # Core MiniMCP tests
 │   └── test_responder.py          # Responder tests
 │
-└── integration/                    # Integration tests (131 tests)
-    ├── helpers/                    # Test helpers
+└── integration/                   # Integration tests (131 tests)
+    ├── helpers/                   # Test helpers
     │   ├── client_session_with_init.py
     │   ├── http.py
     │   └── process.py
-    ├── servers/                    # Test servers
+    ├── servers/                   # Test servers
     │   ├── http_server.py
     │   ├── math_mcp.py
     │   └── stdio_server.py
