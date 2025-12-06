@@ -18,6 +18,7 @@ _MiniMCP is designed with simplicity at its core, it exposes a single asynchrono
 - [Using MiniMCP](#using-minimcp)
   - [Installation](#installation)
   - [Basic Setup](#basic-setup)
+  - [Standalone ASGI App](#standalone-asgi-app)
   - [FastAPI Integration](#fastapi-integration)
 - [API Reference](#api-reference)
   - [MiniMCP](#minimcp)
@@ -29,8 +30,13 @@ _MiniMCP is designed with simplicity at its core, it exposes a single asynchrono
 - [Transports](#transports)
 - [Testing](#testing)
 - [Error Handling](#error-handling)
+  - [Protocol-Level Errors](#protocol-level-errors)
+  - [Transport Error Handling](#transport-error-handling)
 - [Examples](#examples)
-  - [Claude Desktop](#claude-desktop)
+  - [1. Math MCP server](#1-math-mcp-server)
+    - [Claude Desktop](#claude-desktop)
+  - [2. Integrating With Web Frameworks](#2-integrating-with-web-frameworks)
+- [License](#license)
 
 ## What is MCP?
 
