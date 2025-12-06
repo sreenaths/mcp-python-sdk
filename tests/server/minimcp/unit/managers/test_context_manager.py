@@ -60,12 +60,6 @@ class TestContextManager:
         with pytest.raises(ContextError, match="outside of an active handler context"):
             context_manager.get()
 
-    def test_get_message_without_active_context_raises_error(self):
-        """Test that get_message() raises ContextError when no context is active."""
-        context_manager = ContextManager[None]()
-        with pytest.raises(ContextError, match="outside of an active handler context"):
-            context_manager.get_message()
-
     def test_get_scope_without_active_context_raises_error(self):
         """Test that get_scope() raises ContextError when no context is active."""
         context_manager = ContextManager[None]()
@@ -105,13 +99,6 @@ class TestContextManager:
             assert retrieved_context.time_limiter == sample_context.time_limiter
             assert retrieved_context.scope == sample_context.scope
             assert retrieved_context.responder == sample_context.responder
-
-    def test_get_message_within_active_context(self, sample_context: Context[dict[str, str]]):
-        """Test that get_message() returns the message from active context."""
-        context_manager = ContextManager[dict[str, str]]()
-        with context_manager.active(sample_context):
-            message = context_manager.get_message()
-            assert message == sample_context.message
 
     def test_get_scope_within_active_context(self, sample_context: Context[dict[str, str]]):
         """Test that get_scope() returns the scope from active context."""

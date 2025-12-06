@@ -98,17 +98,6 @@ class ContextManager(Generic[ScopeT]):
             logger.error(msg)
             raise ContextError(msg) from e
 
-    def get_message(self) -> JSONRPCMessage:
-        """Get the current JSON-RPC message being handled.
-
-        Returns:
-            The parsed JSONRPCMessage for the current request.
-
-        Raises:
-            ContextError: If called outside of an active handler context.
-        """
-        return self.get().message
-
     def get_scope(self) -> ScopeT:
         """Get the scope object from the current context.
 
