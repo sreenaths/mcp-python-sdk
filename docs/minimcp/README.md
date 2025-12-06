@@ -291,6 +291,7 @@ For detailed information about the test suite, coverage, and running tests, see 
 ## Examples
 
 ### Math MCP server
+
 The [examples](../examples/minimcp/) include a [Math MCP server](../examples/minimcp/math_mcp/math_mcp.py) with prompts, resources and four tools (add, subtract, multiply, and divide) demonstrating how MiniMCP works with different transport mechanisms and frameworks.
 
 To run the examples, you’ll need a development setup. After cloning this repository, run the following command from the project root to set up the environment:
@@ -308,6 +309,7 @@ The table below lists the available examples along with the commands to run them
 | 3 | Streamable HTTP Server | `uv run uvicorn examples.minimcp.math_mcp.streamable_http_server:app` |
 
 ### With Web Frameworks
+
 Next set of examples demonstrate how MiniMCP can be integrated with web frameworks like FastAPI and Django. A dummy [Issue Tracker MCP server](../../examples/minimcp/web_frameworks/issue_tracker_mcp.py) issue tracker MCP server was created for the same. It provides tools to create, read, and delete issues.
 
 The table below lists the available examples along with the commands to run them.

@@ -60,6 +60,7 @@ Testing with basic auth (Not validated, any username/password will work):
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+
 from .issue_tracker_mcp import Scope, mcp_transport
 
 # --- FastAPI Application ---

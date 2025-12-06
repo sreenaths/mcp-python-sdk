@@ -2,19 +2,18 @@
 
 ## Overview
 
-The MiniMCP test suite is a comprehensive collection of **654 tests** totaling approximately **11,715 lines of code**, organized into unit and integration tests. The test suite ensures the reliability, correctness, and MCP specification compliance of the MiniMCP framework.
+The MiniMCP test suite is a comprehensive collection of over **654 tests**, organized into unit and integration tests. The test suite ensures the reliability, correctness, and MCP specification compliance of the MiniMCP framework.
 
 ### Test Statistics
 
 - **Total Tests**: 654
 - **Unit Tests**: 523 (80%)
 - **Integration Tests**: 131 (20%)
-- **Lines of Code**: ~11,715
 - **Test Files**: 18
 
-## Test Organization
+## Test Structure
 
-```
+```text
 tests/server/minimcp/
 ├── unit/                           # Unit tests (523 tests)
 │   ├── managers/                   # Manager component tests
@@ -58,10 +57,12 @@ tests/server/minimcp/
 Tests the main `MiniMCP` class, which is the central orchestrator of the framework.
 
 **Test Classes**:
+
 - `TestMiniMCP` - Core functionality tests
 - `TestMiniMCPIntegration` - Integration scenarios
 
 **Coverage**:
+
 - ✅ Server initialization and configuration
 - ✅ Message handling (requests, notifications, responses)
 - ✅ Protocol version negotiation
@@ -74,6 +75,7 @@ Tests the main `MiniMCP` class, which is the central orchestrator of the framewo
 - ✅ Timeout handling
 
 **Key Test Scenarios**:
+
 ```python
 # Initialization
 test_init_creates_minimcp_instance()
@@ -99,10 +101,12 @@ test_ping_pong()
 Tests the `Responder` class responsible for building JSON-RPC responses.
 
 **Test Classes**:
+
 - `TestResponder` - Response building tests
 - `TestResponderIntegration` - End-to-end response scenarios
 
 **Coverage**:
+
 - ✅ Success response building
 - ✅ Error response creation
 - ✅ Result serialization
@@ -112,6 +116,7 @@ Tests the `Responder` class responsible for building JSON-RPC responses.
 - ✅ Error code mapping (MCP errors → JSON-RPC errors)
 
 **Key Features Tested**:
+
 ```python
 # Response Types
 test_success_response()
@@ -131,6 +136,7 @@ test_result_serialization()
 Comprehensive testing of JSON-RPC 2.0 protocol implementation.
 
 **Test Classes**:
+
 - `TestBuildErrorMessage` - Error message construction
 - `TestGetRequestId` - Request ID extraction
 - `TestIsInitializeRequest` - Initialize request detection
@@ -139,6 +145,7 @@ Comprehensive testing of JSON-RPC 2.0 protocol implementation.
 - `TestIntegration` - Protocol integration tests
 
 **Coverage**:
+
 - ✅ JSON-RPC 2.0 specification compliance
 - ✅ Request/response message building
 - ✅ Error code mapping (-32700 to -32603, -32000 to -32099)
@@ -149,6 +156,7 @@ Comprehensive testing of JSON-RPC 2.0 protocol implementation.
 - ✅ Version checking ("2.0" enforcement)
 
 **Error Code Coverage**:
+
 ```python
 # Standard JSON-RPC Errors
 -32700  # Parse error
@@ -170,11 +178,13 @@ Comprehensive testing of JSON-RPC 2.0 protocol implementation.
 Tests the rate limiting and timeout enforcement mechanisms.
 
 **Test Classes**:
+
 - `TestTimeLimiter` - Time-based limiting
 - `TestLimiter` - General rate limiting
 - `TestLimiterIntegration` - Integration scenarios
 
 **Coverage**:
+
 - ✅ Time-based request limiting
 - ✅ Concurrent request limiting
 - ✅ Request timeout enforcement
@@ -192,10 +202,12 @@ Tests the rate limiting and timeout enforcement mechanisms.
 Tests the `ToolManager` which handles tool registration and execution.
 
 **Test Classes**:
+
 - `TestToolManager` - Core tool management
 - `TestToolManagerAdvancedFeatures` - Advanced features
 
 **Coverage**:
+
 - ✅ Tool registration (sync and async functions)
 - ✅ Tool listing with pagination
 - ✅ Tool execution
@@ -208,6 +220,7 @@ Tests the `ToolManager` which handles tool registration and execution.
 - ✅ Cursor/pagination support
 
 **Key Scenarios**:
+
 ```python
 # Registration
 test_register_sync_function()
@@ -231,10 +244,12 @@ test_schema_from_pydantic_model()
 Tests the `ResourceManager` which handles resource registration and access.
 
 **Test Classes**:
+
 - `TestResourceManager` - Core resource management
 - `TestResourceManagerAdvancedFeatures` - Advanced features
 
 **Coverage**:
+
 - ✅ Resource registration (static and dynamic)
 - ✅ Resource templates with URI patterns
 - ✅ Resource listing with pagination
@@ -247,6 +262,7 @@ Tests the `ResourceManager` which handles resource registration and access.
 - ✅ Metadata and annotations
 
 **Resource Types Tested**:
+
 ```python
 # Static Resources
 test_register_static_resource()
@@ -271,10 +287,12 @@ test_resource_update_notification()
 Tests the `PromptManager` which handles prompt registration and generation.
 
 **Test Classes**:
+
 - `TestPromptManager` - Core prompt management
 - `TestPromptManagerAdvancedFeatures` - Advanced features
 
 **Coverage**:
+
 - ✅ Prompt registration (sync and async)
 - ✅ Prompt listing with pagination
 - ✅ Prompt execution with arguments
@@ -286,6 +304,7 @@ Tests the `PromptManager` which handles prompt registration and generation.
 - ✅ Metadata management
 
 **Prompt Features Tested**:
+
 ```python
 # Registration
 test_register_sync_prompt()
@@ -308,10 +327,12 @@ test_schema_from_pydantic()
 Tests the `ContextManager` which handles server context and state.
 
 **Test Classes**:
+
 - `TestContext` - Context object tests
 - `TestContextManager` - Context management tests
 
 **Coverage**:
+
 - ✅ Context creation and initialization
 - ✅ Context lifecycle management
 - ✅ State isolation between contexts
@@ -328,10 +349,12 @@ Tests the `ContextManager` which handles server context and state.
 Tests the basic HTTP transport implementation.
 
 **Test Classes**:
+
 - `TestHTTPTransport` - Core HTTP transport
 - `TestHTTPTransportHeaderValidation` - Header validation
 
 **Coverage**:
+
 - ✅ POST request handling
 - ✅ Content-Type validation (`application/json`)
 - ✅ Accept header validation
@@ -343,6 +366,7 @@ Tests the basic HTTP transport implementation.
 - ✅ Edge cases (empty body, malformed JSON, missing headers)
 
 **HTTP Validation Tested**:
+
 ```python
 # Request Validation
 test_validate_content_type()
@@ -363,12 +387,14 @@ test_malformed_body()
 Tests the streamable HTTP transport with SSE (Server-Sent Events) support.
 
 **Test Classes**:
+
 - `TestStreamableHTTPTransport` - Core streamable transport
 - `TestStreamableHTTPTransportHeaderValidation` - Header validation
 - `TestStreamableHTTPTransportEdgeCases` - Edge cases
 - `TestStreamableHTTPTransportBase` - Base transport inheritance validation
 
 **Coverage**:
+
 - ✅ All HTTPTransport features (inherits)
 - ✅ SSE (Server-Sent Events) support
 - ✅ Bidirectional Accept headers (`application/json` + `text/event-stream`)
@@ -380,6 +406,7 @@ Tests the streamable HTTP transport with SSE (Server-Sent Events) support.
 - ✅ Context manager requirements
 
 **Streaming Features Tested**:
+
 ```python
 # SSE Support
 test_sse_response_format()
@@ -403,11 +430,13 @@ test_concurrent_request_handling()
 Tests the standard input/output transport for CLI applications.
 
 **Test Classes**:
+
 - `TestWriteMsg` - Message writing tests
 - `TestDispatch` - Message dispatch tests
 - `TestRun` - Transport execution tests
 
 **Coverage**:
+
 - ✅ Line-based message reading (newline delimited)
 - ✅ Message writing with newline validation
 - ✅ Empty line handling
@@ -417,6 +446,7 @@ Tests the standard input/output transport for CLI applications.
 - ✅ MCP spec compliance (no embedded newlines)
 
 **Stdio Protocol Tested**:
+
 ```python
 # Message Format
 test_write_msg_adds_newline()
@@ -438,6 +468,7 @@ test_handler_can_use_send_callback()
 Tests the `MCPFunc` wrapper that converts Python functions into MCP-compatible tools/prompts.
 
 **Test Classes**:
+
 - `TestMCPFuncValidation` - Input validation
 - `TestMCPFuncNameInference` - Name extraction
 - `TestMCPFuncSchemas` - Schema generation
@@ -447,6 +478,7 @@ Tests the `MCPFunc` wrapper that converts Python functions into MCP-compatible t
 - `TestMCPFuncMemoryAndPerformance` - Performance tests
 
 **Coverage**:
+
 - ✅ Function wrapping (sync and async)
 - ✅ Name inference from function names
 - ✅ JSON Schema generation from type hints
@@ -459,6 +491,7 @@ Tests the `MCPFunc` wrapper that converts Python functions into MCP-compatible t
 - ✅ Memory efficiency
 
 **Schema Generation Coverage**:
+
 ```python
 # Type Hint Support
 test_schema_for_int()
@@ -486,9 +519,11 @@ test_nested_pydantic_models()
 End-to-end testing of HTTP server with real MCP client.
 
 **Test Class**:
+
 - `TestHttpServer` - Full HTTP server scenarios
 
 **Coverage**:
+
 - ✅ Server startup and shutdown
 - ✅ Initialize handshake
 - ✅ Tool listing and execution
@@ -505,9 +540,11 @@ End-to-end testing of HTTP server with real MCP client.
 End-to-end testing of streamable HTTP server with SSE support.
 
 **Test Class**:
+
 - `TestStreamableHttpServer` - Full streamable HTTP scenarios
 
 **Coverage**:
+
 - ✅ All HTTP server features (inherits)
 - ✅ SSE event streaming
 - ✅ Progress notifications
@@ -521,9 +558,11 @@ End-to-end testing of streamable HTTP server with SSE support.
 End-to-end testing of stdio-based server.
 
 **Test Class**:
+
 - `TestStdioServer` - Full stdio server scenarios
 
 **Coverage**:
+
 - ✅ Process-based server execution
 - ✅ Line-based communication
 - ✅ Tool, resource, and prompt operations
@@ -533,11 +572,13 @@ End-to-end testing of stdio-based server.
 ### Integration Test Helpers
 
 **Helper Modules**:
+
 - `helpers/client_session_with_init.py` - Client session management
 - `helpers/http.py` - HTTP test utilities
 - `helpers/process.py` - Process management for stdio tests
 
 **Test Servers**:
+
 - `servers/math_mcp.py` - Math operations server for testing
 - `servers/http_server.py` - HTTP server launcher
 - `servers/stdio_server.py` - Stdio server launcher
@@ -697,6 +738,7 @@ class TestMyFeature:
 ## Test Dependencies
 
 The test suite uses:
+
 - `pytest` - Test framework
 - `pytest-anyio` - Async test support
 - `pytest-cov` - Coverage reporting
@@ -714,4 +756,3 @@ The MiniMCP test suite is a comprehensive, well-organized collection of 654 test
 - ✅ **Quality**: High code quality with type hints and best practices
 
 The test suite provides confidence that MiniMCP correctly implements the Model Context Protocol and handles real-world scenarios effectively.
-
