@@ -14,7 +14,7 @@ to be used in the handler functions.
 How to run:
     # Start the server (default: http://127.0.0.1:8000)
     uv run --with django --with djangorestframework \
-        python examples/minimcp/web_frameworks/django_wsgi_server_with_scope.py runserver
+        python examples/minimcp/web_frameworks/django_wsgi_server_with_auth.py runserver
 
 Testing with basic auth (Not validated, any username/password will work):
 
