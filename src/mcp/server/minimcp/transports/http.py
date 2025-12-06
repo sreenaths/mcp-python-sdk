@@ -9,8 +9,8 @@ from typing_extensions import override
 
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import MESSAGE_ENCODING
 from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, BaseHTTPTransport, MCPHTTPResponse
+from mcp.server.minimcp.types import MESSAGE_ENCODING
 
 logger = logging.getLogger(__name__)
 

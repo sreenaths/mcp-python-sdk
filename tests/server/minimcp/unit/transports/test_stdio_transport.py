@@ -7,8 +7,8 @@ import anyio
 import pytest
 
 from mcp.server.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import NoMessage, Send
 from mcp.server.minimcp.transports.stdio import StdioTransport
+from mcp.server.minimcp.types import NoMessage, Send
 
 pytestmark = pytest.mark.anyio
 

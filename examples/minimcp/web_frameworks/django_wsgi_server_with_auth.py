@@ -71,7 +71,7 @@ from issue_tracker_mcp import Scope, mcp_transport
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
-from mcp.server.minimcp.minimcp_types import MESSAGE_ENCODING
+from mcp.server.minimcp.types import MESSAGE_ENCODING
 
 # --- Minimal Django Setup ---
 settings.configure(

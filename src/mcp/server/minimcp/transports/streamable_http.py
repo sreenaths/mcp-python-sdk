@@ -18,8 +18,8 @@ from typing_extensions import override
 from mcp.server.minimcp import MiniMCP
 from mcp.server.minimcp.exceptions import MCPRuntimeError, MiniMCPError
 from mcp.server.minimcp.managers.context_manager import ScopeT
-from mcp.server.minimcp.minimcp_types import MESSAGE_ENCODING, Message
 from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, BaseHTTPTransport, MCPHTTPResponse
+from mcp.server.minimcp.types import MESSAGE_ENCODING, Message
 
 logger = logging.getLogger(__name__)
 

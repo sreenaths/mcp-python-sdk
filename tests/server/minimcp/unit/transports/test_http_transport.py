@@ -7,9 +7,9 @@ import anyio
 import pytest
 
 from mcp.server.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import NoMessage
 from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, RequestValidationError
 from mcp.server.minimcp.transports.http import HTTPTransport
+from mcp.server.minimcp.types import NoMessage
 from mcp.shared.version import LATEST_PROTOCOL_VERSION
 
 pytestmark = pytest.mark.anyio

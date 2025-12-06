@@ -11,7 +11,7 @@ from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
-from mcp.server.minimcp.minimcp_types import MESSAGE_ENCODING, Message, NoMessage
+from mcp.server.minimcp.types import MESSAGE_ENCODING, Message, NoMessage
 
 logger = logging.getLogger(__name__)
 
