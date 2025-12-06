@@ -308,14 +308,14 @@ The table below lists the available examples along with the commands to run them
 | 3 | Streamable HTTP Server | `uv run uvicorn examples.minimcp.math_mcp.streamable_http_server:app` |
 
 ### With Web Frameworks
-Next set of examples demonstrate how MiniMCP can be integrated with web frameworks like FastAPI and Django.
+Next set of examples demonstrate how MiniMCP can be integrated with web frameworks like FastAPI and Django. A dummy [Issue Tracker MCP server](../../examples/minimcp/web_frameworks/issue_tracker_mcp.py) issue tracker MCP server was created for the same. It provides tools to create, read, and delete issues.
 
 The table below lists the available examples along with the commands to run them.
 
 | # | Server                         | Command                                                                                            |
 |---|--------------------------------|----------------------------------------------------------------------------------------------------|
 | 1 | FastAPI HTTP Server with scope | `uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app` |
-
+| 2 | Django WSGI server with auth   | `uv run --with django --with djangorestframework python examples/minimcp/web_frameworks/django_wsgi_server_with_scope.py runserver` |
 
 ### Claude Desktop
 
