@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 import mcp.types as types
-from mcp.server.minimcp import json_rpc
+from mcp.server.minimcp.utils import json_rpc
 
 
 class TestBuildErrorMessage:

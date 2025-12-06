@@ -5,7 +5,7 @@ from typing import Any, Generic
 import anyio
 from pydantic import ValidationError
 
-import mcp.server.minimcp.json_rpc as json_rpc
+import mcp.server.minimcp.utils.json_rpc as json_rpc
 import mcp.shared.version as version
 import mcp.types as types
 from mcp.server.lowlevel.server import NotificationOptions, Server

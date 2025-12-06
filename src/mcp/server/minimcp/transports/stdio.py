@@ -7,11 +7,11 @@ import anyio
 import anyio.lowlevel
 
 from mcp import types
-from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
 from mcp.server.minimcp.types import MESSAGE_ENCODING, Message, NoMessage
+from mcp.server.minimcp.utils import json_rpc
 
 logger = logging.getLogger(__name__)
 

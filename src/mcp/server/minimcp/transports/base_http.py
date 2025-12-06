@@ -10,11 +10,11 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 import mcp.types as types
-from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.managers.context_manager import ScopeT
 from mcp.server.minimcp.minimcp import MiniMCP
 from mcp.server.minimcp.types import NoMessage, Send
+from mcp.server.minimcp.utils import json_rpc
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
 logger = logging.getLogger(__name__)

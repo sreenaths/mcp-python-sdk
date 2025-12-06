@@ -3,9 +3,9 @@ import logging
 from operator import attrgetter
 
 import mcp.types as types
-from mcp.server.minimcp import json_rpc
 from mcp.server.minimcp.limiter import TimeLimiter
 from mcp.server.minimcp.types import Message, Send
+from mcp.server.minimcp.utils import json_rpc
 
 logger = logging.getLogger(__name__)
 
