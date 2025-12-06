@@ -2,26 +2,27 @@
 
 ## Overview
 
-The MiniMCP test suite is a comprehensive collection of over **654 tests**, organized into unit and integration tests. The test suite ensures the reliability, correctness, and MCP specification compliance of the MiniMCP framework.
+The MiniMCP test suite is a comprehensive collection of over **645 tests**, organized into unit and integration tests. The test suite ensures the reliability, correctness, and MCP specification compliance of the MiniMCP framework.
 
 ### Test Statistics
 
-- **Total Tests**: 654
-- **Unit Tests**: 523 (80%)
+- **Total Tests**: 645
+- **Unit Tests**: 514 (80%)
 - **Integration Tests**: 131 (20%)
-- **Test Files**: 18
+- **Test Files**: 16
 
 ## Test Structure
 
 ```text
 tests/server/minimcp/
-├── unit/                           # Unit tests (523 tests)
+├── unit/                           # Unit tests (514 tests)
 │   ├── managers/                   # Manager component tests
 │   │   ├── test_context_manager.py
 │   │   ├── test_prompt_manager.py
 │   │   ├── test_resource_manager.py
 │   │   └── test_tool_manager.py
 │   ├── transports/                 # Transport layer tests
+│   │   ├── test_base_http_transport.py
 │   │   ├── test_http_transport.py
 │   │   ├── test_stdio_transport.py
 │   │   └── test_streamable_http_transport.py
@@ -46,13 +47,13 @@ tests/server/minimcp/
     └── test_streamable_http_server.py
 ```
 
-## Unit Tests (523 tests)
+## Unit Tests (514 tests)
 
 ### Core Components
 
 #### 1. MiniMCP Core (`test_minimcp.py`)
 
-**52 test cases** | **832 lines**
+**50 test cases** | **840 lines**
 
 Tests the main `MiniMCP` class, which is the central orchestrator of the framework.
 
@@ -96,7 +97,7 @@ test_ping_pong()
 
 #### 2. Responder (`test_responder.py`)
 
-**37 test cases** | **633 lines**
+**35 test cases** | **639 lines**
 
 Tests the `Responder` class responsible for building JSON-RPC responses.
 
@@ -131,7 +132,7 @@ test_result_serialization()
 
 #### 3. JSON-RPC Protocol (`test_json_rpc.py`)
 
-**47 test cases** | **702 lines**
+**41 test cases** | **476 lines**
 
 Comprehensive testing of JSON-RPC 2.0 protocol implementation.
 
@@ -173,7 +174,7 @@ Comprehensive testing of JSON-RPC 2.0 protocol implementation.
 
 #### 4. Rate Limiting (`test_limiter.py`)
 
-**42 test cases** | **590 lines**
+**39 test cases** | **533 lines**
 
 Tests the rate limiting and timeout enforcement mechanisms.
 
@@ -197,7 +198,7 @@ Tests the rate limiting and timeout enforcement mechanisms.
 
 #### 5. Tool Manager (`test_tool_manager.py`)
 
-**47 test cases** | **806 lines**
+**46 test cases** | **829 lines**
 
 Tests the `ToolManager` which handles tool registration and execution.
 
@@ -239,7 +240,7 @@ test_schema_from_pydantic_model()
 
 #### 6. Resource Manager (`test_resource_manager.py`)
 
-**64 test cases** | **1,060 lines**
+**63 test cases** | **1,089 lines**
 
 Tests the `ResourceManager` which handles resource registration and access.
 
@@ -282,7 +283,7 @@ test_resource_update_notification()
 
 #### 7. Prompt Manager (`test_prompt_manager.py`)
 
-**52 test cases** | **894 lines**
+**51 test cases** | **918 lines**
 
 Tests the `PromptManager` which handles prompt registration and generation.
 
@@ -322,7 +323,7 @@ test_schema_from_pydantic()
 
 #### 8. Context Manager (`test_context_manager.py`)
 
-**19 test cases** | **284 lines**
+**17 test cases** | **246 lines**
 
 Tests the `ContextManager` which handles server context and state.
 
@@ -342,9 +343,45 @@ Tests the `ContextManager` which handles server context and state.
 
 ### Transport Layer Tests
 
-#### 9. HTTP Transport (`test_http_transport.py`)
+#### 9. Base HTTP Transport (`test_base_http_transport.py`)
 
-**41 test cases** | **442 lines**
+**22 test cases** | **281 lines**
+
+Tests the base HTTP transport implementation that serves as the foundation for both HTTP and Streamable HTTP transports.
+
+**Test Classes**:
+
+- `TestBaseHTTPTransport` - Core base HTTP transport
+- `TestBaseHTTPTransportHeaderValidation` - Header validation
+
+**Coverage**:
+
+- ✅ Basic request/response handling
+- ✅ Content-Type validation (`application/json`)
+- ✅ Accept header validation
+- ✅ Protocol version validation (`MCP-Protocol-Version` header)
+- ✅ HTTP method validation
+- ✅ Header parsing (case-insensitive, quality values)
+- ✅ Error response handling
+- ✅ Request validation errors
+
+**Key Features Tested**:
+
+```python
+# Header Validation
+test_validate_content_type()
+test_validate_accept_headers()
+test_validate_protocol_version()
+
+# Request Handling
+test_handle_valid_request()
+test_handle_invalid_method()
+test_handle_missing_headers()
+```
+
+#### 10. HTTP Transport (`test_http_transport.py`)
+
+**39 test cases** | **529 lines**
 
 Tests the basic HTTP transport implementation.
 
@@ -380,9 +417,9 @@ test_unsupported_method()
 test_malformed_body()
 ```
 
-#### 10. Streamable HTTP Transport (`test_streamable_http_transport.py`)
+#### 11. Streamable HTTP Transport (`test_streamable_http_transport.py`)
 
-**43 test cases** | **838 lines**
+**43 test cases** | **846 lines**
 
 Tests the streamable HTTP transport with SSE (Server-Sent Events) support.
 
@@ -423,9 +460,9 @@ test_transport_context_manager()
 test_concurrent_request_handling()
 ```
 
-#### 11. Stdio Transport (`test_stdio_transport.py`)
+#### 12. Stdio Transport (`test_stdio_transport.py`)
 
-**18 test cases** | **296 lines**
+**15 test cases** | **302 lines**
 
 Tests the standard input/output transport for CLI applications.
 
@@ -461,9 +498,9 @@ test_handler_can_use_send_callback()
 
 ### Utility Tests
 
-#### 12. MCP Function Wrapper (`test_mcp_func.py`)
+#### 13. MCP Function Wrapper (`test_mcp_func.py`)
 
-**60 test cases** | **839 lines**
+**53 test cases** | **745 lines**
 
 Tests the `MCPFunc` wrapper that converts Python functions into MCP-compatible tools/prompts.
 
@@ -512,9 +549,9 @@ test_nested_pydantic_models()
 
 ### Server Integration Tests
 
-#### 13. HTTP Server Integration (`test_http_server.py`)
+#### 14. HTTP Server Integration (`test_http_server.py`)
 
-**40 test cases** | **~500 lines**
+**39 test cases** | **570 lines**
 
 End-to-end testing of HTTP server with real MCP client.
 
@@ -533,9 +570,9 @@ End-to-end testing of HTTP server with real MCP client.
 - ✅ Concurrent requests
 - ✅ Client-server communication
 
-#### 14. Streamable HTTP Server Integration (`test_streamable_http_server.py`)
+#### 15. Streamable HTTP Server Integration (`test_streamable_http_server.py`)
 
-**17 test cases** | **281 lines**
+**55 test cases** | **286 lines**
 
 End-to-end testing of streamable HTTP server with SSE support.
 
@@ -551,9 +588,9 @@ End-to-end testing of streamable HTTP server with SSE support.
 - ✅ Long-running operations
 - ✅ Stream lifecycle
 
-#### 15. Stdio Server Integration (`test_stdio_server.py`)
+#### 16. Stdio Server Integration (`test_stdio_server.py`)
 
-**38 test cases** | **~500 lines**
+**37 test cases** | **516 lines**
 
 End-to-end testing of stdio-based server.
 
@@ -747,7 +784,7 @@ The test suite uses:
 
 ## Summary
 
-The MiniMCP test suite is a comprehensive, well-organized collection of 654 tests that ensure:
+The MiniMCP test suite is a comprehensive, well-organized collection of 645 tests that ensure:
 
 - ✅ **MCP Specification Compliance**: Full adherence to protocol requirements
 - ✅ **Reliability**: Extensive error handling and edge case coverage
@@ -756,3 +793,8 @@ The MiniMCP test suite is a comprehensive, well-organized collection of 654 test
 - ✅ **Quality**: High code quality with type hints and best practices
 
 The test suite provides confidence that MiniMCP correctly implements the Model Context Protocol and handles real-world scenarios effectively.
+
+---
+
+*Generated by: Calude 4.5 Sonnet*\
+*Last updated: December 6, 2025*
