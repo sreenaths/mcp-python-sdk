@@ -3,10 +3,10 @@
 <!-- omit in toc -->
 # ✨ MiniMCP
 
-A **minimal, stateless, and lightweight** framework for building remote MCP servers.
+A **minimal, stateless, and lightweight** framework for building MCP servers.
 </div>
 
-_MiniMCP is designed with simplicity at its core, it exposes a single asynchronous function to handle MCP messages—Pass in a request, and it returns the response_ ⭐ _While MiniMCP supports bidirectional messaging, it’s not a mandatory requirement—So you can use plain HTTP for communication_ ⭐ _MiniMCP is primarily built for remote MCP servers but works just as well for local servers_ ⭐ _MiniMCP ships with built-in transport mechanisms (stdio, HTTP via Starlette, and Streamable HTTP via Starlette)—You’re free to use them directly or implement your own_ ⭐ _MiniMCP is built on the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), ensuring standardized context and resource sharing._
+_MiniMCP is designed with simplicity at its core, it exposes a single asynchronous function to handle MCP messages—Pass in a request message, and it returns the response message_ ⭐ _While bidirectional messaging is supported, it’s not a mandatory requirement—So you can use plain HTTP transport for communication_ ⭐ _MiniMCP is primarily built for remote MCP servers but works just as well for local servers_ ⭐ _MiniMCP ships with built-in transport mechanisms (stdio, HTTP, and 'Smart' Streamable HTTP)—You’re free to use them as it is or extend them to suit your needs_ ⭐ _Makes it possible to add MCP inside any Python web application, and use your existing auth mechanisms_ ⭐ _MiniMCP is built on the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk), ensuring standardized context and resource sharing._ ⭐ _Hook handlers to a MiniMCP instance, wrap it inside any of the provided transports and your MCP server is ready!_
 
 ## Table of Contents
 
@@ -38,17 +38,19 @@ The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) is a powerfu
 
 ## Why MiniMCP?
 
-MiniMCP rethinks the MCP server from the ground up, keeping the core functionality lightweight and independent of the transport layer, bidirectional communication, session management, and auth mechanisms. Additionally, instead of a stream-based interface, MiniMCP exposes a simple asynchronous handle function that takes a JSON-RPC 2.0 message string as input and returns a JSON-RPC 2.0 message string as output.
+MiniMCP rethinks the MCP server from the ground up, keeping the core functionality lightweight and independent of transport layer, bidirectional communication, session management, and auth mechanisms. Additionally, instead of a stream-based interface, MiniMCP exposes a simple asynchronous handle function that takes a JSON-RPC 2.0 message string as input and returns a JSON-RPC 2.0 message string as output.
 
-- **Stateless:** Scalability, simplicity, and reliability are crucial for remote MCP servers. MiniMCP is stateless at its core—each request is self-contained, and the server maintains no persistent session state. This design makes it robust and easy to scale horizontally. This also makes it a perfect fit for **serverless architectures**, where ephemeral execution environments are the norm.
-
+- **Stateless:** Scalability, simplicity, and reliability are crucial for remote MCP servers. MiniMCP provides all of those by being stateless at its core — each request is self-contained, and the server maintains no persistent session state.
+  - This design makes it robust and easy to scale horizontally.
+  - This also makes it a perfect fit for **serverless architectures**, where ephemeral execution environments are the norm.
+  - Want to start your MCP server using uvicorn with multiple workers? No problem.
 - **Bidirectional is optional:** Many use cases work perfectly with a simple request–response channel without needing bidirectional communication. MiniMCP was built with this in mind and provides a simple HTTP transport while adhering to the specification.
-- **Embeddable:** Already have an application built with FastAPI (or another framework)? You can embed a MiniMCP server under a single endpoint—or multiple servers under multiple endpoints—_Unlike with mounting, you can use your existing dependency injection system._
-- **Scope and Context:** MiniMCP provides a type-checked scope object that travels with each message. This allows you to pass extra details such as authentication, user info, session data, or database handles. Inside the handler, the scope is available in the context—_so you’re free to use your preferred session or user management mechanisms._
-- **Security:** MiniMCP encourages you to use your existing battle-tested security mechanism instead of enforcing one - _A MiniMCP server built with FastAPI can be as secure as any FastAPI application!_
-- **Stream on Demand:** MiniMCP comes with a smart Streamable HTTP implementation. If the handler just returns a response, the server replies with a normal JSON HTTP response. An event stream is only opened when the server actually needs to push notifications to the client.
-- **Separation of Concerns:** The transport layer is fully decoupled from message handling. This makes it easy to adapt MiniMCP to different environments and protocols without rewriting your core business logic.
-- **Minimal Dependencies:** MiniMCP keeps its footprint small, depending only on the official MCP SDK. This makes it lightweight, easy to maintain, and less prone to dependency conflicts.
+- **Embeddable:** Already have an application built with FastAPI (or another framework)? You can embed a MiniMCP server under a single endpoint, or multiple servers under multiple endpoints — _As a cherry on the cake, you can use your existing dependency injection system._
+- **Scope and Context:** MiniMCP provides a type-checked scope object that travels with each message. This allows you to pass extra details such as authentication, user info, session data, or database handles. Inside the handler, the scope is available as part of the context — _So you’re free to use your preferred session or user management mechanisms._
+- **Security:** MiniMCP encourages you to use your existing battle-tested security mechanism instead of enforcing one - _In other words, a MiniMCP server built with FastAPI can be as secure as any FastAPI application!_
+- **Stream on Demand:** MiniMCP comes with a smart streamable HTTP transport. It opens an event stream only when the server needs to push notifications to the client.
+- **Separation of Concerns:** The transport layer is fully decoupled from message handling. This makes it easy to adapt MiniMCP to different environments and transport protocols without rewriting your core business logic.
+- **Minimal Dependencies:** MiniMCP keeps its footprint small, depending only on the official MCP SDK.
 
 ### Currently Supported Features
 
@@ -58,28 +60,27 @@ The following features are already available in MiniMCP.
 - 🔗 Transports - stdio, HTTP, Streamable HTTP
 - 🔄 Server to client messages - Progress notification
 - 🛠 Typed scope and handler context
-- ⚡ Asynchronous - stateless message processing
+- ⚡ Asynchronous and stateless message processing
 - 📝 Easy handler registration for different MCP message types
 - ⏱️ Enforces idle time and concurrency limits
-- 📦 Web frameworks - In-built support for Starlette/FastAPI
+- 📦 Web frameworks — In-built support for Starlette/FastAPI
 
 ### Planned Features (if needed)
 
-These features may be added in the future if the need arises.
+These features may be added in the future if need arises.
 
-- ⚠️ Server-initiated messaging
-- ⚠️ Built-in support for more frameworks—Flask, Django etc.
+- ⚠️ Built-in support for more frameworks — Flask, Django etc.
 - ⚠️ Client primitives - Sampling, Elicitation, Logging
-- ⚠️ Pagination
 - ⚠️ Resumable Streamable HTTP with GET method support
-- ⚠️ MCP Client (_As shown in the [integration tests](../tests/server/minimcp/integration/), MiniMCP works seamlessly with existing MCP clients, and there’s currently no need for a custom client_)
+- ⚠️ Pagination
+- ⚠️ Authentication
+- ⚠️ MCP Client (_As shown in the [integration tests](../../tests/server/minimcp/integration/), MiniMCP (All 3 transports) works seamlessly with existing MCP clients, hence there is no immediate need for a custom client_)
 
 ### Unlikely Features
 
-These features are not expected to be built into MiniMCP in the foreseeable future.
+Only feature that's not expected to be built into MiniMCP in the foreseeable future.
 
 - 🚫 Session management
-- 🚫 Authentication
 
 ## Using MiniMCP
 
@@ -88,7 +89,7 @@ The snippets below provide a quick overview of how to use MiniMCP. Check out the
 ### Installation
 
 ```bash
-pip install minimcp
+pip install mcp
 ```
 
 ### Basic Setup
@@ -96,6 +97,9 @@ pip install minimcp
 The following example demonstrates simple registration and basic message processing using the handle function.
 
 ```python
+from mcp.server.minimcp import MiniMCP
+
+
 mcp = MiniMCP(name="MathServer")
 
 # Tool
@@ -122,6 +126,30 @@ request_msg = '{"jsonrpc": "2.0", "id": "1", "method": "ping"}'
 response_msg = await mcp.handle(request_msg, scope={...})
 # response_msg = '{"jsonrpc": "2.0", "id": "1", "result": {}}'
 ```
+### Standalone ASGI App
+
+MiniMCP can be easily deployed as an ASGI application.
+
+```python
+from fastapi import FastAPI, Request
+from mcp.server.minimcp import MiniMCP, HTTPTransport
+
+# Create an MCP instance
+mcp = MiniMCP(name="MathServer")
+
+# Register tools and other primitives
+@mcp.tool(description="Add two numbers")
+def add(a:int, b:int) -> int:
+    return a + b
+
+# MCP server as ASGI Application
+app = HTTPTransport(mcp).as_starlette("/mcp")
+```
+
+You can now start the server using uvuicorn with four workers as follows.
+```bash
+uv run uvicorn test:app --workers 4
+```
 
 ### FastAPI Integration
 
@@ -129,23 +157,24 @@ This minimal example shows how to expose an MCP tool over HTTP using FastAPI.
 
 ```python
 from fastapi import FastAPI, Request
-from minimcp import MiniMCP, starlette
+from mcp.server.minimcp import MiniMCP, HTTPTransport
 
 # This can be an existing FastAPI/Starlette app (with authentication, middleware, etc.)
 app = FastAPI()
 
 # Create an MCP instance
-mcp = MiniMCP(name="MathServer")
+mcp = MiniMCP[dict](name="MathServer")
 
 # Register a simple tool
 @mcp.tool(description="Add two numbers")
 def add(a:int, b:int) -> int:
     return a + b
 
-# Define the MCP endpoint
+# Host MCP server
 @app.post("/mcp")
-async def handle_mcp_request(request: Request):
-    return await starlette.http_transport(mcp.handle, request)
+async def mcp(request: Request):
+    scope = {...} # Pass auth, database and mother metadata as part of scope
+    return await mcp_transport.starlette_dispatch(request, scope)
 ```
 
 ## API Reference
@@ -154,14 +183,14 @@ This section provides an overview of the key classes, their functions, and the a
 
 ### MiniMCP
 
-As the name suggests, MiniMCP is the core class for creating a server. It requires a server name as its only mandatory argument; all other arguments are optional. You can also specify the type of the scope object, which is passed through the system.
+As the name suggests, MiniMCP is the key class for creating a server. It requires a server name as its only mandatory argument; all other arguments are optional. You can also specify the type of the scope object, which is passed through the system for static type checking.
 
 MiniMCP provides:
 
-- Tool, Prompt, and Resource managers — used to register handlers.
-- A Context manager — accessible inside handlers.
+- Tool, Prompt, and Resource managers — used to register message handlers.
+- A Context manager — usable inside handlers.
 
-The handle function processes incoming messages. It accepts a JSON-RPC 2.0 message string and two optional parameters: a send function and a scope object.
+The `MiniMCP.handle()` function processes incoming messages. It accepts a JSON-RPC 2.0 message string and two optional parameters — a send function and a scope object.
 
 MiniMCP controls how many handlers can run at the same time and how long each handler can remain idle. By default, idle_timeout is set to 30 seconds and max_concurrency to 100.
 
@@ -181,9 +210,9 @@ response = await mcp.handle(message, [send, scope])
 
 ### Primitive Managers/Decorators
 
-MiniMCP supports three server primitives, each managed by its own primitive manager. These managers are implemented as callable classes that can be used as decorators for registering handler functions.
+MiniMCP supports three server primitives, each managed by its own manager class. These managers are available under MiniMCP as a callable instance that can be used as decorators for registering handler functions. They work similar to FastMCP's decorators.
 
-When called, a manager accepts a primitive definition. If none is provided, the definition is automatically inferred from the handler function.
+The decorator accepts primitive details as argument (like name, description etc). If not provided, these details are automatically inferred from the handler function.
 
 In addition to decorator usage, all three primitive managers also expose methods to add, list, remove, and invoke handlers programmatically.
 
@@ -195,10 +224,10 @@ In addition to decorator usage, all three primitive managers also expose methods
 def handler_func(...):...
 
 # Methods for programmatic access
-mcp.tool.add(func, [name, title, description, annotations, meta])  # Register a tool
-mcp.tool.remove(name)                                              # Remove a tool by name
-mcp.tool.list()                                                    # List all registered tools
-mcp.tool.call(name, args)                                          # Invoke a tool by name
+mcp.tool.add(handler_func, [name, title, description, annotations, meta])  # Register a tool
+mcp.tool.remove(name)                                                      # Remove a tool by name
+mcp.tool.list()                                                            # List all registered tools
+mcp.tool.call(name, args)                                                  # Invoke a tool by name
 ```
 
 #### Prompt Manager
@@ -209,7 +238,7 @@ mcp.tool.call(name, args)                                          # Invoke a to
 def handler_func(...):...
 
 # Methods for programmatic access
-mcp.prompt.add(func, [name, title, description, meta])
+mcp.prompt.add(handler_func, [name, title, description, meta])
 mcp.prompt.remove(name)
 mcp.prompt.list()
 mcp.prompt.get(name, args)
@@ -223,7 +252,7 @@ mcp.prompt.get(name, args)
 def handler_func(...):...
 
 # Methods for programmatic access
-mcp.resource.add(func, url, [name, title, description, annotations, meta])
+mcp.resource.add(handler_func, url, [name, title, description, annotations, meta])
 mcp.resource.remove(name)
 mcp.resource.list()
 mcp.resource.list_templates()
@@ -233,7 +262,7 @@ mcp.resource.read_by_name(name, args)
 
 ### Context Manager
 
-The Context Manager provides access to request metadata (such as the message, scope, responder, and timeout) directly inside handlers. It tracks the currently active handler context, which you can retrieve using `mcp_instance.context.get()`. If called outside of a handler, this method raises a `ContextError`.
+The Context Manager provides access to request metadata (such as the message, scope, responder, and time_limiter) directly inside the handler function. It tracks the currently active handler context, which you can retrieve using `mcp.context.get()`. If called outside of a handler, this method raises a `ContextError`.
 
 ```python
 # Context structure
@@ -246,7 +275,7 @@ Context(Generic[ScopeT]):
 # Accessing context
 mcp.context.get() -> Context[ScopeT]
 
-# For common use cases, the following helpers are provided to avoid null checks
+# Following helpers are also provided by context for easy access
 mcp.context.get_scope() -> ScopeT
 mcp.context.get_responder() -> Responder
 ```
@@ -261,9 +290,9 @@ The official MCP specification currently defines two standard transport mechanis
 | HTTP            | Request–response | Simple REST-like message handling                                   |
 | Streamable HTTP | Bidirectional    | Advanced message handling with notifications, progress updates etc. |
 
-HTTP is a subset of Streamable HTTP and doesn't support bidirectional communication. However, as shown in the integration example, it can be added as a RESTful API endpoint in any Python application to host remote MCP servers. Importantly, it remains compatible with Streamable HTTP MCP clients.
+HTTP is a subset of Streamable HTTP and doesn't support bidirectional (server to client) communication. However, as shown in the integration example, it can be added as a RESTful API endpoint in any Python application to host remote MCP servers. Importantly, it remains compatible with Streamable HTTP MCP clients.
 
-MiniMCP also provides a smart Streamable HTTP implementation. It adapts to usage patterns: if the handler simply returns a response, the server replies with a normal JSON HTTP response. An event stream is opened only when the server needs to push notifications to the client. To keep things simple and stateless, this is currently implemented using polling to keep the stream alive, with the option to support fully resumable Streamable HTTP in the future.
+MiniMCP provides a `Smart Streamable HTTP` implementation. It adapts to usage patterns — if the handler simply returns a message, the server replies with a normal JSON HTTP response. An event stream is opened only when the server needs to push notifications to the client. To keep things simple and stateless, current implementation uses polling to keep the stream alive. Resumability in the case of a connection lose could be implemented in a future iteration.
 
 You can use the transports as shown below, or wrap `mcp.handle` in a custom function to pass a scope or manage lifecycle:
 
@@ -282,23 +311,36 @@ For more details on supported transports, please check the [specification compli
 
 ## Testing
 
-MiniMCP comes with a comprehensive test suite of **654 tests** covering unit and integration testing across all components. The test suite validates MCP specification compliance, error handling, edge cases, and real-world scenarios.
+MiniMCP comes with a comprehensive test suite of **645 tests** covering unit and integration testing across all components. The test suite validates MCP specification compliance, error handling, edge cases, and real-world scenarios.
 
 For detailed information about the test suite, coverage, and running tests, see the [Testing Documentation](./testing.md).
 
 ## Error Handling
 
+MiniMCP implements a centralized error handling mechanism following JSON-RPC 2.0 and MCP specifications. Errors are categorized into three types:
+
+### Protocol-Level Errors
+The `MiniMCP.handle()` method provides centralized exception handling that catches all MCP-related errors. Parse and message validation errors are re-raised as `InvalidMessageError` that transport layers must handle, while other errors are returned as formatted JSON-RPC error responses. As the specification
+
+### Tool Execution Errors
+As suggested by the MCP specification, tool execution errors are returned in the `CallToolResult` with `isError: true`.
+
+### Transport Error Handling
+HTTP transports catch `RequestValidationError` (header/version validation), `InvalidMessageError` (parse/JSON-RPC errors), and unexpected exceptions, returning appropriate HTTP status codes (400, 404, 422, 500) with JSON-RPC error bodies. Stdio transport catches all exceptions including `InvalidMessageError`, formats them as JSON-RPC errors, and writes them to stdout without terminating the connection.
+
+
+
 ## Examples
-
-### Math MCP server
-
-The [examples](../examples/minimcp/) include a [Math MCP server](../examples/minimcp/math_mcp/math_mcp.py) with prompts, resources and four tools (add, subtract, multiply, and divide) demonstrating how MiniMCP works with different transport mechanisms and frameworks.
 
 To run the examples, you’ll need a development setup. After cloning this repository, run the following command from the project root to set up the environment:
 
 ```bash
 uv sync --frozen --all-extras --dev
 ```
+
+### 1. Math MCP server
+
+[First set of example](../../examples/minimcp/math_mcp/) include a [Math MCP server](../examples/minimcp/math_mcp/math_mcp.py) with prompts, resources and four tools (add, subtract, multiply, and divide). The example demonstrate how MiniMCP works with different transport mechanisms and frameworks.
 
 The table below lists the available examples along with the commands to run them.
 
@@ -308,20 +350,9 @@ The table below lists the available examples along with the commands to run them
 | 2 | HTTP Server            | `uv run uvicorn examples.minimcp.math_mcp.http_server:app`            |
 | 3 | Streamable HTTP Server | `uv run uvicorn examples.minimcp.math_mcp.streamable_http_server:app` |
 
-### With Web Frameworks
+#### Claude Desktop
 
-Next set of examples demonstrate how MiniMCP can be integrated with web frameworks like FastAPI and Django. A dummy [Issue Tracker MCP server](../../examples/minimcp/web_frameworks/issue_tracker_mcp.py) issue tracker MCP server was created for the same. It provides tools to create, read, and delete issues.
-
-The table below lists the available examples along with the commands to run them.
-
-| # | Server                         | Command                                                                                            |
-|---|--------------------------------|----------------------------------------------------------------------------------------------------|
-| 1 | FastAPI HTTP Server with scope | `uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_scope:app` |
-| 2 | Django WSGI server with auth   | `uv run --with django --with djangorestframework python examples/minimcp/web_frameworks/django_wsgi_server_with_scope.py runserver` |
-
-### Claude Desktop
-
-Claude desktop can be configured to run the stdio example as follows.
+Claude desktop can be configured as follows to run the Math MCP stdio example.
 
 ```json
 {
@@ -342,3 +373,18 @@ Claude desktop can be configured to run the stdio example as follows.
     }
 }
 ```
+
+### 2. Integrating With Web Frameworks
+
+[Second set of examples](../../examples/minimcp/web_frameworks/) demonstrate how MiniMCP can be integrated with web frameworks like FastAPI and Django. A dummy [Issue Tracker MCP server](../../examples/minimcp/web_frameworks/issue_tracker_mcp.py) was created for the same. It provides tools to create, read, and delete issues.
+
+The table below lists the available examples along with the commands to run them.
+
+| # | Server                         | Command                                                                                            |
+|---|--------------------------------|----------------------------------------------------------------------------------------------------|
+| 1 | FastAPI HTTP Server with auth | `uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_auth:app` |
+| 2 | Django WSGI server with auth   | `uv run --with django --with djangorestframework python examples/minimcp/web_frameworks/django_wsgi_server_with_auth.py runserver` |
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
