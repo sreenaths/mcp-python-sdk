@@ -12,6 +12,7 @@ _MiniMCP is designed with simplicity at its core, it exposes a single asynchrono
 
 - [What is MCP?](#what-is-mcp)
 - [Why MiniMCP?](#why-minimcp)
+  - [When to Use MiniMCP](#when-to-use-minimcp)
   - [Currently Supported Features](#currently-supported-features)
   - [Planned Features](#planned-features-if-needed)
   - [Unlikely Features](#unlikely-features)
@@ -28,6 +29,9 @@ _MiniMCP is designed with simplicity at its core, it exposes a single asynchrono
     - [Resource Manager](#resource-manager)
   - [Context Manager](#context-manager)
 - [Transports](#transports)
+  - [Stdio Transport](#stdio-transport)
+  - [HTTP Transport](#http-transport)
+  - [Streamable HTTP Transport](#streamable-http-transport)
 - [Testing](#testing)
 - [Error Handling](#error-handling)
   - [Protocol-Level Errors](#protocol-level-errors)
@@ -36,6 +40,7 @@ _MiniMCP is designed with simplicity at its core, it exposes a single asynchrono
   - [1. Math MCP server](#1-math-mcp-server)
     - [Claude Desktop](#claude-desktop)
   - [2. Integrating With Web Frameworks](#2-integrating-with-web-frameworks)
+- [Troubleshooting](#troubleshooting)
 - [License](#license)
 
 ## What is MCP?
@@ -58,6 +63,15 @@ MiniMCP rethinks the MCP server from the ground up, keeping the core functionali
 - **Separation of Concerns:** The transport layer is fully decoupled from message handling. This makes it easy to adapt MiniMCP to different environments and transport protocols without rewriting your core business logic.
 - **Minimal Dependencies:** MiniMCP keeps its footprint small, depending only on the official MCP SDK.
 
+#### When to Use MiniMCP
+
+- If you need to embed MCP in an existing web application (FastAPI, Django, Flask, etc.)
+- Want stateless, horizontally scalable MCP servers
+- Are deploying to serverless environments (AWS Lambda, Cloud Functions, etc.)
+- Use your existing battle-tested security mechanisms and middlewares
+- Want simple HTTP endpoints without mandatory bidirectional communication
+- Need better CPU usage, and resilience by running multiple workers (e.g., `uvicorn --workers 4`)
+
 ### Currently Supported Features
 
 The following features are already available in MiniMCP.
@@ -71,13 +85,14 @@ The following features are already available in MiniMCP.
 - ⏱️ Enforces idle time and concurrency limits
 - 📦 Web frameworks — In-built support for Starlette/FastAPI
 
-### Planned Features (if needed)
+### Planned Features
 
 These features may be added in the future if need arises.
 
 - ⚠️ Built-in support for more frameworks — Flask, Django etc.
 - ⚠️ Client primitives - Sampling, Elicitation, Logging
 - ⚠️ Resumable Streamable HTTP with GET method support
+- ⚠️ Fine-grained access control (FGAC)
 - ⚠️ Pagination
 - ⚠️ Authentication
 - ⚠️ MCP Client (_As shown in the [integration tests](../../tests/server/minimcp/integration/), MiniMCP (All 3 transports) works seamlessly with existing MCP clients, hence there is no immediate need for a custom client_)
@@ -94,8 +109,14 @@ The snippets below provide a quick overview of how to use MiniMCP. Check out the
 
 ### Installation
 
+MiniMCP is part of the official MCP Python SDK. Install it using pip or uv:
+
 ```bash
+# Using pip
 pip install mcp
+
+# Using uv (recommended)
+uv add mcp
 ```
 
 ### Basic Setup
@@ -129,9 +150,10 @@ def pi_value() -> float:
     return 3.14
 
 request_msg = '{"jsonrpc": "2.0", "id": "1", "method": "ping"}'
-response_msg = await mcp.handle(request_msg, scope={...})
+response_msg = await mcp.handle(request_msg)
 # response_msg = '{"jsonrpc": "2.0", "id": "1", "result": {}}'
 ```
+
 ### Standalone ASGI App
 
 MiniMCP can be easily deployed as an ASGI application.
@@ -167,8 +189,8 @@ from mcp.server.minimcp import MiniMCP, HTTPTransport
 # This can be an existing FastAPI/Starlette app (with authentication, middleware, etc.)
 app = FastAPI()
 
-# Create an MCP instance
-mcp = MiniMCP[dict](name="MathServer")
+# Create an MCP instance with optional typed scope
+mcp = MiniMCP(name="MathServer")
 transport = HTTPTransport(mcp)
 
 # Register a simple tool
@@ -179,7 +201,8 @@ def add(a:int, b:int) -> int:
 # Host MCP server
 @app.post("/mcp")
 async def handler(request: Request):
-    scope = {...} # Pass auth, database and other metadata as part of scope
+    # Pass auth, database and other metadata as part of scope (optional)
+    scope = {"user_id": "123", "db": db_connection}
     return await transport.starlette_dispatch(request, scope)
 ```
 
@@ -258,12 +281,12 @@ mcp.prompt.get(name, args)
 def handler_func(...):...
 
 # Methods for programmatic access
-mcp.resource.add(handler_func, url, [name, title, description, annotations, meta])
+mcp.resource.add(handler_func, uri, [name, title, description, mime_type, annotations, meta])
 mcp.resource.remove(name)
-mcp.resource.list()
-mcp.resource.list_templates()
-mcp.resource.read(uri)
-mcp.resource.read_by_name(name, args)
+mcp.resource.list()                    # List all static resources
+mcp.resource.list_templates()          # List all resource templates (URIs with parameters)
+mcp.resource.read(uri)                 # Read a resource by URI, returns ReadResourceResult
+mcp.resource.read_by_name(name, args)  # Read a resource by name with template args dict
 ```
 
 ### Context Manager
@@ -281,9 +304,25 @@ Context(Generic[ScopeT]):
 # Accessing context
 mcp.context.get() -> Context[ScopeT]
 
-# Following helpers are also provided by context for easy access
+# Helper methods for easy access (raise ContextError if not available)
 mcp.context.get_scope() -> ScopeT
 mcp.context.get_responder() -> Responder
+```
+
+**Example - Resetting timeout in long-running operations:**
+
+```python
+@mcp.tool()
+async def process_large_dataset(dataset_id: str) -> str:
+    """Process a large dataset with periodic timeout resets"""
+    ctx = mcp.context.get()
+
+    for i in range(1000):
+        # Reset timeout to prevent idle timeout during active processing
+        ctx.time_limiter.reset()
+        await process_item(i)
+
+    return "Processing complete"
 ```
 
 ## Transports
@@ -296,9 +335,21 @@ The official MCP specification currently defines two standard transport mechanis
 | HTTP            | Request–response | Simple REST-like message handling                                   |
 | Streamable HTTP | Bidirectional    | Advanced message handling with notifications, progress updates etc. |
 
-HTTP is a subset of Streamable HTTP and does not support bidirectional (server-to-client) communication. However, as shown in the integration example, it can be added as an API endpoint in any Python application to host remote MCP servers. Importantly, it remains compatible with Streamable HTTP MCP clients.
+#### Stdio Transport
 
-MiniMCP provides a `Smart Streamable HTTP` implementation that adapts to usage pattern — if the handler simply returns a message, the server replies with a normal JSON HTTP response. An event stream is opened only when the server needs to push notifications to the client. To keep things simple and stateless, the current implementation uses polling to keep the stream alive. Resumability in case of connection loss could be implemented in a future iteration.
+MiniMCP processes each incoming message in a dedicated async task that remains active throughout the entire handler execution. This ensures proper resource management and allows for concurrent message processing while maintaining handler isolation.
+
+#### HTTP Transport
+HTTP is a subset of Streamable HTTP and does not support bidirectional (server-to-client) communication. However, as shown in the integration example, it can be added as an API endpoint in any Python application to host remote MCP servers. Importantly, it remains compatible with Streamable HTTP MCP clients (Clients can connect using the Streamable HTTP protocol)
+
+#### Streamable HTTP Transport
+
+MiniMCP provides a `Smart` Streamable HTTP implementation that uses SSE only when notifications needs to be send to the client from the server:
+
+- **Simple responses**: If the handler simply returns a message without sending notifications, the server replies with a normal JSON HTTP response.
+- **Event streams**: An SSE (Server-Sent Events) stream is opened **only when** the handler calls `responder.send_notification()` or `responder.report_progress()` _(More would be supported in the future)_.
+- **Stateless design**: Uses polling provided by Starlette EventSourceResponse to maintain an SSE connection.
+- **Future enhancement**: Resumability in case of connection loss could be implemented in a future iteration _(Probably using something like Redis Streams)_, and make polling optional.
 
 Check out [the Math MCP examples](../../examples/minimcp/math_mcp/) to see how each transport can be used.
 
@@ -319,6 +370,21 @@ The `MiniMCP.handle()` method provides centralized error handling for all protoc
 Tool errors use a dual mechanism as specified by MCP:
 1. Tool registration errors, invalid arguments, and runtime failures are returned as JSON-RPC errors.
 2. Business logic errors within tool handlers (e.g., API failures, invalid data) are caught by the low-level MCP core and returned in `CallToolResult` with `isError: true`, allowing the client to handle them appropriately.
+
+**Example - isError: true**
+
+```python
+@mcp.tool()
+def divide(a: float, b: float) -> float:
+    """Divide two numbers
+
+    Raises:
+        ValueError: If divisor is zero (returned as tool error with isError=true)
+    """
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
+    return a / b
+```
 
 ### Transport Error Handling
 
@@ -348,7 +414,7 @@ The table below lists the available examples along with the commands to run them
 
 #### Claude Desktop
 
-Claude desktop can be configured as follows to run the Math MCP stdio example.
+Claude desktop can be configured as follows to run the Math MCP stdio example. Replace `/path/to/minimcp` with the actual absolute path to your cloned repository (e.g., `/Users/yourname/projects/mcp-python-sdk` or `C:\Users\yourname\projects\mcp-python-sdk`).
 
 ```json
 {
@@ -380,6 +446,88 @@ The table below lists the available examples along with the commands to run them
 |---|--------------------------------|----------------------------------------------------------------------------------------------------|
 | 1 | FastAPI HTTP Server with auth | `uv run --with fastapi uvicorn examples.minimcp.web_frameworks.fastapi_http_server_with_auth:app` |
 | 2 | Django WSGI server with auth   | `uv run --with django --with djangorestframework python examples/minimcp/web_frameworks/django_wsgi_server_with_auth.py runserver` |
+
+## Troubleshooting
+
+### Common Issues
+
+**Q: My handler times out after 30 seconds**
+
+A: The default idle timeout is 30 seconds. For long-running operations, reset the timeout periodically:
+
+```python
+@mcp.tool()
+async def long_operation():
+    ctx = mcp.context.get()
+    for i in range(100):
+        # Reset timeout to prevent idle timeout
+        ctx.time_limiter.reset()
+        await process_item(i)
+```
+
+You can also configure the timeout when creating the MiniMCP instance:
+
+```python
+mcp = MiniMCP(name="MyServer", idle_timeout=60)  # 60 seconds
+```
+
+**Q: How do I adjust the concurrency limit?**
+
+A: By default, MiniMCP allows 100 concurrent handlers. You can adjust this with the `max_concurrency` parameter:
+
+```python
+mcp = MiniMCP(name="MyServer", max_concurrency=200)
+```
+
+**Q: How do I access the scope in nested functions?**
+
+A: Use `mcp.context.get_scope()` from anywhere within the handler execution context:
+
+```python
+@mcp.tool()
+def my_tool():
+    scope = mcp.context.get_scope()
+    helper_function()
+
+def helper_function():
+    # Can access scope from nested functions
+    scope = mcp.context.get_scope()
+    user_id = scope.user_id
+```
+
+**Q: Can I use MiniMCP with multiple workers in uvicorn?**
+
+A: Yes! MiniMCP is stateless by design and works perfectly with multiple workers:
+
+```bash
+uvicorn my_server:app --workers 4
+```
+
+**Q: How do I handle ContextError exceptions?**
+
+A: `ContextError` is raised when accessing context outside of a handler or when required context attributes (scope, responder) are not available:
+
+```python
+# Check if scope is available
+try:
+    scope = mcp.context.get_scope()
+except ContextError:
+    # Handle case where scope wasn't provided
+    pass
+
+# Or check the context directly
+ctx = mcp.context.get()
+if ctx.scope is not None:
+    # Use scope
+    pass
+```
+
+**Q: What's the difference between HTTP and Streamable HTTP transports?**
+
+A:
+- **HTTP**: Simple request-response only. No server-to-client notifications.
+- **Streamable HTTP**: Supports bidirectional communication. Opens SSE stream when needed.
+- Both are compatible—Streamable HTTP clients can connect to HTTP servers (without bidirectional features).
 
 ## License
 
