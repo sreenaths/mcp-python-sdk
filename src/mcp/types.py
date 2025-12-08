@@ -181,6 +181,7 @@ URL_ELICITATION_REQUIRED = -32042
 # SDK error codes
 CONNECTION_CLOSED = -32000
 # REQUEST_TIMEOUT = -32001  # the typescript sdk uses this
+RESOURCE_NOT_FOUND = -32002  # Used when a resource is not found as per the MCP specification.
 
 # Standard JSON-RPC error codes
 PARSE_ERROR = -32700
@@ -557,7 +558,7 @@ class Task(BaseModel):
     """Current task state."""
 
     statusMessage: str | None = None
-    """  
+    """
     Optional human-readable message describing the current task state.
     This can provide context for any status, including:
     - Reasons for "cancelled" status
