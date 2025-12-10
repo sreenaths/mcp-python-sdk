@@ -1,13 +1,20 @@
 from typing import Any
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import anyio
 import pytest
 from pydantic import BaseModel, Field
 
 import mcp.types as types
+from mcp.server.fastmcp.utilities.func_metadata import FuncMetadata
 from mcp.server.lowlevel.server import Server
-from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError, MCPRuntimeError, PrimitiveError
+from mcp.server.minimcp.exceptions import (
+    InvalidArgumentsError,
+    MCPFuncError,
+    MCPRuntimeError,
+    PrimitiveError,
+    ToolMCPRuntimeError,
+)
 from mcp.server.minimcp.managers.tool_manager import ToolDefinition, ToolManager
 
 pytestmark = pytest.mark.anyio
@@ -827,3 +834,31 @@ class TestToolManagerAdvancedFeatures:
         tools = tool_manager.list()
         assert len(tools) == 1
         assert tools[0].name == "error_tool"
+
+    async def test_tool_convert_result_exception(self, tool_manager: ToolManager):
+        """Test that exceptions during result conversion are handled properly."""
+
+        def simple_tool(value: str) -> str:
+            """A simple tool"""
+            return value
+
+        tool_manager.add(simple_tool)
+
+        # Patch the convert_result method on FuncMetadata class
+        with patch.object(FuncMetadata, "convert_result", side_effect=ValueError("Conversion failed")):
+            with pytest.raises(ToolMCPRuntimeError, match="Error calling tool simple_tool"):
+                await tool_manager._call("simple_tool", {"value": "test"})
+
+    async def test_tool_call_wrapper_mcp_runtime_error(self, tool_manager: ToolManager):
+        """Test that call() wrapper properly converts ToolMCPRuntimeError to MCPRuntimeError."""
+
+        def simple_tool(value: str) -> str:
+            """A simple tool"""
+            return value
+
+        tool_manager.add(simple_tool)
+
+        # Patch the convert_result method on FuncMetadata class
+        with patch.object(FuncMetadata, "convert_result", side_effect=RuntimeError("Runtime error")):
+            with pytest.raises(MCPRuntimeError, match="Error calling tool simple_tool"):
+                await tool_manager.call("simple_tool", {"value": "test"})

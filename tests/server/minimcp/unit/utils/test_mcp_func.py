@@ -743,3 +743,10 @@ class TestMCPFuncMemoryAndPerformance:
         assert mcp_func2.name == "func2"
         assert mcp_func1.func is not mcp_func2.func
         assert mcp_func1.meta is not mcp_func2.meta
+
+    def test_infer_name_with_lambda(self):
+        """Test that _infer_name raises error for lambda functions."""
+        lambda_func: AnyFunction = lambda x: x  # noqa: E731  # type: ignore[assignment]
+
+        with pytest.raises(MCPFuncError, match="Lambda functions must be named"):
+            MCPFunc(lambda_func)

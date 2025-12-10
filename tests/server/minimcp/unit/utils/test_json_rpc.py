@@ -474,3 +474,18 @@ class TestIntegration:
 
         assert json_rpc.is_initialize_request(init_request) is True
         assert json_rpc.is_initialize_request(other_request) is False
+
+    def test_is_initialize_request_with_validation_error(self):
+        """Test is_initialize_request when ValidationError is raised."""
+        # Invalid JSON that contains "initialize" but will fail validation
+        invalid_message = '{"initialize": true, "invalid": "structure"}'
+
+        # Should return False when ValidationError is caught
+        assert json_rpc.is_initialize_request(invalid_message) is False
+
+    def test_is_initialize_request_without_initialize_keyword(self):
+        """Test is_initialize_request when 'initialize' is not in the message."""
+        message = '{"jsonrpc": "2.0", "id": 1, "method": "other"}'
+
+        # Should return False early without trying to validate
+        assert json_rpc.is_initialize_request(message) is False

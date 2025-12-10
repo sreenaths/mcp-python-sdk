@@ -9,13 +9,14 @@ import pytest
 from anyio.streams.memory import MemoryObjectReceiveStream
 from test_base_http_transport import TestBaseHTTPTransport
 
-from mcp.server.minimcp.exceptions import MCPRuntimeError
+from mcp.server.minimcp.exceptions import MCPRuntimeError, MiniMCPError
 from mcp.server.minimcp.minimcp import MiniMCP
 from mcp.server.minimcp.transports.base_http import MCPHTTPResponse
 from mcp.server.minimcp.transports.streamable_http import (
     SSE_HEADERS,
     MCPStreamingHTTPResponse,
     StreamableHTTPTransport,
+    StreamManager,
 )
 from mcp.server.minimcp.types import Message, NoMessage, Send
 from mcp.types import LATEST_PROTOCOL_VERSION
@@ -844,3 +845,26 @@ class TestStreamableHTTPTransportBase(TestBaseHTTPTransport):
         transport = StreamableHTTPTransport[Any](mcp)
         async with transport:
             yield transport
+
+
+class TestStreamManagerEdgeCases:
+    """Test suite for StreamManager edge cases and error handling."""
+
+    async def test_stream_manager_send_before_create(self):
+        """Test that send raises error when stream is not created."""
+
+        stream_manager = StreamManager(lambda x: None)
+
+        with pytest.raises(MiniMCPError, match="Send stream is unavailable"):
+            await stream_manager.send("test message")
+
+    async def test_streamable_http_as_starlette(self):
+        """Test as_starlette method for streamable HTTP."""
+        server = MiniMCP[Any](name="test-server", version="1.0.0")
+        transport = StreamableHTTPTransport(server)
+
+        app = transport.as_starlette(path="/mcp", debug=True)
+
+        # Verify app is created with lifespan
+        assert app is not None
+        assert len(app.routes) == 1

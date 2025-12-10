@@ -1,5 +1,6 @@
 import json
 from collections.abc import Coroutine
+from datetime import datetime
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -10,10 +11,15 @@ import mcp.types as types
 from mcp.server.lowlevel.server import NotificationOptions, Server
 from mcp.server.minimcp.exceptions import (
     ContextError,
+    InternalMCPError,
+    InvalidArgumentsError,
     InvalidJSONError,
     InvalidJSONRPCMessageError,
     InvalidMessageError,
+    MCPRuntimeError,
+    PrimitiveError,
     RequestHandlerNotFoundError,
+    ResourceNotFoundError,
     UnsupportedMessageTypeError,
 )
 from mcp.server.minimcp.managers.context_manager import Context, ContextManager
@@ -711,13 +717,10 @@ class TestMiniMCPIntegration:
         assert "isoTimestamp" in error_data
 
         # Verify timestamp is valid ISO format
-        from datetime import datetime
-
         datetime.fromisoformat(error_data["isoTimestamp"])
 
     async def test_process_error_with_internal_mcp_error(self):
         """Test _process_error method with InternalMCPError that has data."""
-        from mcp.server.minimcp.exceptions import ResourceNotFoundError
 
         server: MiniMCP[Any] = MiniMCP(name="process-error-test")
 
@@ -736,11 +739,6 @@ class TestMiniMCPIntegration:
 
     async def test_handle_with_different_error_types(self):
         """Test handling different types of MiniMCP errors."""
-        from mcp.server.minimcp.exceptions import (
-            InvalidArgumentsError,
-            MCPRuntimeError,
-            PrimitiveError,
-        )
 
         server: MiniMCP[Any] = MiniMCP(name="error-types-test")
 
@@ -838,3 +836,91 @@ class TestMiniMCPIntegration:
         for i, response in enumerate(results):
             assert response["id"] == i
             assert "error" in response
+
+    async def test_unsupported_message_type_error(self):
+        """Test handling of UnsupportedMessageTypeError."""
+        server: MiniMCP[Any] = MiniMCP(name="test-server")
+
+        # Create a message that will trigger UnsupportedMessageTypeError
+        # This happens when the message is valid JSON-RPC but not a request or notification
+        with patch("mcp.server.minimcp.minimcp.MiniMCP._handle_rpc_msg") as mock_handle:
+            from mcp.server.minimcp.exceptions import UnsupportedMessageTypeError
+
+            mock_handle.side_effect = UnsupportedMessageTypeError("Unsupported message type")
+
+            message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "test", "params": {}})
+            result = await server.handle(message)
+
+            # Should return an error response
+            response = json.loads(result)  # type: ignore
+            assert "error" in response
+            assert response["id"] == 1
+
+    async def test_request_handler_not_found_error(self):
+        """Test handling of RequestHandlerNotFoundError."""
+        server: MiniMCP[Any] = MiniMCP(name="test-server")
+
+        # Create a message with a method that doesn't exist in MiniMCP
+        message = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": "resources/subscribe", "params": {"uri": "file:///config.json"}}
+        )
+        result = await server.handle(message)
+
+        # Should return a METHOD_NOT_FOUND error
+        response = json.loads(result)  # type: ignore
+        assert "error" in response
+        assert response["error"]["code"] == types.METHOD_NOT_FOUND
+        assert response["id"] == 1
+
+    async def test_resource_not_found_error(self):
+        """Test handling of ResourceNotFoundError."""
+        server: MiniMCP[Any] = MiniMCP(name="test-server")
+
+        # Try to read a resource that doesn't exist
+        message = json.dumps(
+            {"jsonrpc": "2.0", "id": 1, "method": "resources/read", "params": {"uri": "nonexistent://resource"}}
+        )
+        result = await server.handle(message)
+
+        # Should return a RESOURCE_NOT_FOUND error
+        response = json.loads(result)  # type: ignore
+        assert "error" in response
+        assert response["error"]["code"] == types.RESOURCE_NOT_FOUND
+        assert response["id"] == 1
+
+    async def test_internal_mcp_error(self):
+        """Test handling of InternalMCPError."""
+
+        server: MiniMCP[Any] = MiniMCP(name="test-server")
+
+        # Mock _handle_rpc_msg to raise InternalMCPError
+        with patch("mcp.server.minimcp.minimcp.MiniMCP._handle_rpc_msg") as mock_handle:
+            mock_handle.side_effect = InternalMCPError("Internal error")
+
+            message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "test", "params": {}})
+            result = await server.handle(message)
+
+            # Should return an INTERNAL_ERROR response
+            response = json.loads(result)  # type: ignore
+            assert "error" in response
+            assert response["error"]["code"] == types.INTERNAL_ERROR
+            assert response["id"] == 1
+
+    async def test_error_type_checking_branches(self):
+        """Test the error type checking branches in _parse_message."""
+        server: MiniMCP[Any] = MiniMCP(name="test-server")
+
+        # Test with invalid JSON that triggers json_invalid error
+        invalid_json = "{invalid json"
+        with pytest.raises(InvalidMessageError):
+            await server.handle(invalid_json)
+
+        # Test with valid JSON but invalid JSON-RPC (missing jsonrpc field)
+        invalid_jsonrpc = json.dumps({"id": 1, "method": "test"})
+        with pytest.raises(InvalidMessageError):
+            await server.handle(invalid_jsonrpc)
+
+        # Test with wrong jsonrpc version
+        wrong_version = json.dumps({"jsonrpc": "1.0", "id": 1, "method": "test", "params": {}})
+        with pytest.raises(InvalidMessageError):
+            await server.handle(wrong_version)

@@ -2,7 +2,7 @@ import json
 from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any, NamedTuple
-from unittest.mock import ANY, AsyncMock
+from unittest.mock import ANY, AsyncMock, patch
 
 import anyio
 import pytest
@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from typing_extensions import override
 
+from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.minimcp import MiniMCP
 from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, BaseHTTPTransport, RequestValidationError
 from mcp.shared.version import LATEST_PROTOCOL_VERSION
@@ -125,6 +126,18 @@ class TestBaseHTTPTransportHeaderValidation:
     @pytest.fixture
     def transport(self) -> BaseHTTPTransport[Any]:
         return MockHTTPTransport(AsyncMock(spec=MiniMCP[Any]))
+
+    @pytest.fixture
+    def accept_content_types(self) -> str:
+        return "application/json"
+
+    @pytest.fixture
+    def request_headers(self, accept_content_types: str) -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Accept": accept_content_types,
+            "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION,
+        }
 
     def test_validate_accept_headers_valid(self, transport: BaseHTTPTransport[Any]):
         """Test validate accept headers with valid headers."""
@@ -279,3 +292,20 @@ class TestBaseHTTPTransportHeaderValidation:
 
         # Content-Type header test
         transport._validate_content_type(headers)
+
+    async def test_handle_post_request_with_invalid_message_error(self, request_headers: dict[str, str]):
+        """Test _handle_post_request when InvalidMessageError is raised."""
+
+        server = MiniMCP[Any](name="test-server", version="1.0.0")
+        transport = MockHTTPTransport(server)
+
+        # Create an invalid message that will trigger InvalidMessageError
+        invalid_message = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "test"})
+
+        # Mock handle to raise InvalidMessageError with a response
+        error_response = '{"jsonrpc": "2.0", "error": {"code": -32600, "message": "Invalid Request"}, "id": 1}'
+        with patch.object(server, "handle", side_effect=InvalidMessageError("Invalid", error_response)):
+            result = await transport._handle_post_request(request_headers, invalid_message, None)
+
+            assert result.status_code == HTTPStatus.BAD_REQUEST
+            assert result.content == error_response

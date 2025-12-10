@@ -8,6 +8,7 @@ import mcp.types as types
 from mcp.server.lowlevel.server import Server
 from mcp.server.minimcp.exceptions import InvalidArgumentsError, MCPFuncError, MCPRuntimeError, PrimitiveError
 from mcp.server.minimcp.managers.prompt_manager import PromptDefinition, PromptManager
+from mcp.server.minimcp.utils.mcp_func import MCPFunc
 
 pytestmark = pytest.mark.anyio
 
@@ -916,3 +917,29 @@ class TestPromptManagerAdvancedFeatures:
         # Should be callable with empty args
         get_result = await prompt_manager.get("no_args_prompt", None)
         assert len(get_result.messages) == 1
+
+    def test_get_arguments_without_properties(self, prompt_manager: PromptManager):
+        """Test _get_arguments when input_schema has no properties.
+
+        A function with no parameters will naturally have an input_schema
+        without a 'properties' key, which tests the branch where
+        'properties' is not in input_schema.
+        """
+
+        def simple_func() -> str:
+            """A simple function with no parameters"""
+            return "result"
+
+        mcp_func = MCPFunc(simple_func)
+
+        # Verify the schema doesn't have properties (or has empty properties)
+        # This tests the code path where "properties" not in input_schema
+        arguments = prompt_manager._get_arguments(mcp_func)
+        assert arguments == []
+
+    async def test_validate_args_with_none(self, prompt_manager: PromptManager):
+        """Test _validate_args when prompt_arguments is None."""
+        # This should return early without raising an error
+        prompt_manager._validate_args(None, {"some": "args"})
+        prompt_manager._validate_args(None, None)
+        # If we get here without exception, the test passes

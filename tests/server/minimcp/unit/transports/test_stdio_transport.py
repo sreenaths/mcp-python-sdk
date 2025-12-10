@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 import anyio
 import pytest
 
+from mcp.server.minimcp.exceptions import InvalidMessageError
 from mcp.server.minimcp.minimcp import MiniMCP
 from mcp.server.minimcp.transports.stdio import StdioTransport
 from mcp.server.minimcp.types import NoMessage, Send
@@ -300,3 +301,30 @@ class TestRun:
         # write should not be called for NoMessage
         # (dispatch checks isinstance and skips)
         assert mock_stdout.write.call_count == 0
+
+    async def test_dispatch_with_invalid_message_error(
+        self, stdio_transport: StdioTransport[Any], mock_stdout: AsyncMock
+    ):
+        """Test dispatch when InvalidMessageError is raised."""
+
+        error_response = '{"jsonrpc":"2.0","error":{"code":-32600,"message":"Invalid Request"},"id":1}'
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=InvalidMessageError("Invalid", error_response))
+
+        await stdio_transport.dispatch('{"jsonrpc":"2.0","id":1,"method":"test"}')
+
+        # Should write the error response
+        mock_stdout.write.assert_called_once_with(error_response + "\n")
+
+    async def test_dispatch_with_unexpected_exception(
+        self, stdio_transport: StdioTransport[Any], mock_stdout: AsyncMock
+    ):
+        """Test dispatch when an unexpected exception is raised."""
+        stdio_transport.minimcp.handle = AsyncMock(side_effect=RuntimeError("Unexpected error"))
+
+        await stdio_transport.dispatch('{"jsonrpc":"2.0","id":1,"method":"test"}')
+
+        # Should write an error response
+        assert mock_stdout.write.call_count == 1
+        written_message = mock_stdout.write.call_args[0][0]
+        assert "error" in written_message
+        assert "Unexpected error" in written_message or "INTERNAL_ERROR" in written_message

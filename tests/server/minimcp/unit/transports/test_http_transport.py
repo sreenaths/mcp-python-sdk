@@ -5,6 +5,7 @@ from unittest.mock import ANY, AsyncMock
 
 import anyio
 import pytest
+from starlette.requests import Request
 
 from mcp.server.minimcp.minimcp import MiniMCP
 from mcp.server.minimcp.transports.base_http import MEDIA_TYPE_JSON, RequestValidationError
@@ -374,6 +375,18 @@ class TestHTTPTransportHeaderValidation:
     def transport(self) -> HTTPTransport[Any]:
         return HTTPTransport[Any](AsyncMock(spec=MiniMCP[Any]))
 
+    @pytest.fixture
+    def accept_content_types(self) -> str:
+        return "application/json"
+
+    @pytest.fixture
+    def request_headers(self, accept_content_types: str) -> dict[str, str]:
+        return {
+            "Content-Type": "application/json",
+            "Accept": accept_content_types,
+            "MCP-Protocol-Version": LATEST_PROTOCOL_VERSION,
+        }
+
     def test_validate_accept_headers_valid(self, transport: HTTPTransport[Any]):
         """Test validate accept headers with valid headers."""
         headers = {"Accept": "application/json, text/plain"}
@@ -527,3 +540,48 @@ class TestHTTPTransportHeaderValidation:
 
         # Content-Type header test
         transport._validate_content_type(headers)
+
+    async def test_starlette_dispatch(self, request_headers: dict[str, str]):
+        """Test starlette_dispatch method."""
+
+        server = MiniMCP[Any](name="test-server", version="1.0.0")
+        transport = HTTPTransport(server)
+
+        # Create a mock request
+        init_message = json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": LATEST_PROTOCOL_VERSION,
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1.0"},
+                },
+            }
+        )
+
+        # Mock Starlette request
+        scope = {
+            "type": "http",
+            "method": "POST",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in request_headers.items()],
+        }
+        request = Request(scope)
+        request._body = init_message.encode()
+
+        response = await transport.starlette_dispatch(request)
+
+        assert response.status_code == HTTPStatus.OK
+        assert response.media_type == MEDIA_TYPE_JSON
+
+    async def test_as_starlette(self, request_headers: dict[str, str]):
+        """Test as_starlette method."""
+        server = MiniMCP[Any](name="test-server", version="1.0.0")
+        transport = HTTPTransport(server)
+
+        app = transport.as_starlette(path="/mcp", debug=True)
+
+        # Verify app is created
+        assert app is not None
+        assert len(app.routes) == 1
