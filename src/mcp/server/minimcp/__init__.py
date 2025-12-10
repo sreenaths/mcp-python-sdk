@@ -1,4 +1,4 @@
-"""MiniMCP - A minimal, high-performance MCP server implementation."""
+"""MiniMCP - A minimal, stateless, and lightweight framework for building MCP servers"""
 
 from mcp.server.minimcp.exceptions import ContextError
 from mcp.server.minimcp.limiter import Limiter, TimeLimiter

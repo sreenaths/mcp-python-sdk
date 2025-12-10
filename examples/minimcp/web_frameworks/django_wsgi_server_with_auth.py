@@ -15,47 +15,6 @@ How to run:
     # Start the server (default: http://127.0.0.1:8000)
     uv run --with django --with djangorestframework \
         python examples/minimcp/web_frameworks/django_wsgi_server_with_auth.py runserver
-
-Testing with basic auth (Not validated, any username/password will work):
-
-    # 1. Ping the MCP server
-    curl -X POST http://127.0.0.1:8000/mcp \
-        -u admin:admin \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        -d '{"jsonrpc": "2.0", "id": "1", "method": "ping"}'
-
-    # 2. List tools
-    curl -X POST http://127.0.0.1:8000/mcp \
-        -u admin:admin \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        -d '{"jsonrpc":"2.0","id":"1","method":"tools/list","params":{}}'
-
-    # 3. Create an issue
-    curl -X POST http://127.0.0.1:8000/mcp \
-        -u admin:admin \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
-            "params":{"name":"create_issue","arguments":{"title":"First issue","description":"Issue description"}}}'
-
-    # 4. Read the issue
-    curl -X POST http://127.0.0.1:8000/mcp \
-        -u admin:admin \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
-            "params":{"name":"read_issue","arguments":{"issue_id":"MCP-1"}}}'
-
-    # 5. Delete the issue
-    curl -X POST http://127.0.0.1:8000/mcp \
-        -u admin:admin \
-        -H "Content-Type: application/json" \
-        -H "Accept: application/json" \
-        -d '{"jsonrpc":"2.0","id":"1","method":"tools/call",
-            "params":{"name":"delete_issue","arguments":{"issue_id":"MCP-1"}}}'
-
 """
 
 from collections.abc import Mapping

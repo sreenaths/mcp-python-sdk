@@ -2,7 +2,9 @@
 
 After analyzing all 6 benchmark results across different transports and workload patterns, here's the clear verdict:
 
-### 🏆 Overall Winner: MiniMCP
+## Overall Winner
+
+### 🏆 MiniMCP
 
 **MiniMCP consistently outperforms FastMCP across all transport types and workloads.**
 
@@ -47,24 +49,28 @@ After analyzing all 6 benchmark results across different transports and workload
 | | | Heavy Load Throughput | **153% higher** (388 vs 153 RPS) |
 
 **Key Highlights:**
+
 - 🔥 **STDIO Async**: MiniMCP shines brightest with 34% faster response times and 23% higher throughput under heavy load
 - 🚀 **HTTP Transports**: MiniMCP dramatically outperforms with up to 173% higher throughput under heavy load
 
 ## 📊 Summary Statistics
 
 ### Response Time Improvements (MiniMCP vs FastMCP)
+
 - **Sequential Load**: 5-42% faster
 - **Light Load**: 16-48% faster
 - **Medium Load**: 22-34% faster
 - **Heavy Load**: 23-67% faster
 
 ### Throughput Improvements (MiniMCP vs FastMCP)
+
 - **Sequential Load**: 2-74% higher
 - **Light Load**: 2-55% higher
 - **Medium Load**: 4-30% higher
 - **Heavy Load**: 4-173% higher
 
 ### Max Memory Efficiency (MiniMCP vs FastMCP)
+
 - **STDIO Transport**: 17-21% lower memory usage under heavy load
 - **HTTP Transport**: 27-28% lower memory usage under heavy load
 - **Streamable HTTP Transport**: 27-28% lower memory usage under heavy load
@@ -73,6 +79,7 @@ After analyzing all 6 benchmark results across different transports and workload
 ## 🏁 Conclusion
 
 **🏆 MiniMCP is the clear winner** for production workloads, offering:
+
 - ✅ **Faster response times** (20-67% improvement)
 - ✅ **Higher throughput** (10-173% improvement)
 - ✅ **Better scalability** under heavy load
@@ -112,5 +119,4 @@ After analyzing all 6 benchmark results across different transports and workload
 
 ---
 
-*Generated from benchmark results on December 10th, 2025 by Claude 4.5 Sonnet*
-
+Generated from benchmark results on December 10th, 2025 by Claude 4.5 Sonnet
